@@ -182,7 +182,6 @@ def train():
 
             input=torch.Tensor(image).permute(2,0,1).view(-1,3,448,448).cuda()
             output=net(input)
-            output=F.sigmoid(output)
 
 
             # cal loss
@@ -195,10 +194,10 @@ def train():
             for idx in range(bbox.shape[0]):
                 idxi,idxj=bbox[idx,1].astype(int),bbox[idx,0].astype(int)
                 # cal iou
-                p_box_x=output[0,offset_x,idxi,idxj]+idxj
-                p_box_y=output[0,offset_y,idxi,idxj]+idxi
-                p_box_w=output[0,offset_w,idxi,idxj]
-                p_box_h = output[0,offset_h, idxi, idxj]
+                p_box_x=F.sigmoid(output[0,offset_x,idxi,idxj])+idxj
+                p_box_y=F.sigmoid(output[0,offset_y,idxi,idxj])+idxi
+                p_box_w=F.sigmoid(output[0,offset_w,idxi,idxj])
+                p_box_h = F.sigmoid(output[0,offset_h, idxi, idxj])
                 box1=(p_box_x,p_box_y,p_box_w,p_box_h)
                 box2=bbox[idx]
                 iou=cal_iou(box1,box2)
