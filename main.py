@@ -212,11 +212,16 @@ def train():
                 # cv2.rectangle(image, (b2_x1, b2_y1), (b2_x2, b2_y2), (0, 255, 0), 1)
                 # cv2.imshow("image",image)
                 # cv2.waitKey(0)
-                print("iou: %f , liou: %f"%(iou,(1.0 - iou).sum()))
+                # print("iou: %f , liou: %f"%(iou,(1.0 - iou).sum()))
                 lbox+=(1.0 - iou).sum()
 
                 lcls+=BCEcls(output[0,offset_cls+clses[idx],idxi,idxj].float(),torch.tensor(1).float().cuda())
-                lobj+=BCEobj(output[0,0,idxi,idxj].float(),torch.tensor(1).float().cuda())
+
+                score_src=output[0, 0, idxi, idxj].float()
+                score_sig=F.sigmoid(score_src)
+                sub_lobj=BCEobj(output[0,0,idxi,idxj].float(),torch.tensor(1).float().cuda())
+                print("score_src: %f score_sig: %f sub_lobj: %f"%(score_src,score_sig,sub_lobj))
+                lobj+=sub_lobj
 
                 # for tensorboard write
                 box1=(p_box_x,p_box_y,p_box_w,p_box_h)
