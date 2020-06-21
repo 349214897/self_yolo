@@ -165,7 +165,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
 
             _class_mask[b,cell_ind, a, :] = class_scale
             _classes[b,cell_ind, a, gt_classes_b[i]] = 1.
-    return _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask
+    return _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask, bbox_np
 
 def bbox_ious(boxes,query_boxes):
     """
@@ -213,6 +213,67 @@ def np_to_variable(x, is_cuda=True, dtype=torch.FloatTensor, volatile=False):
         v = v.cuda()
     return v
 
+def nms(dets, scores, thresh):
+    x1 = dets[:, 0]
+    y1 = dets[:, 1]
+    x2 = dets[:, 2]
+    y2 = dets[:, 3]
+
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+    order = scores.argsort()[::-1]
+
+    ndets = dets.shape[0]
+    suppressed = np.zeros((ndets), dtype=np.int)
+
+    keep = []
+    for _i in range(ndets):
+        i = order[_i]
+        if suppressed[i] == 1:
+            continue
+        keep.append(i)
+        ix1 = x1[i]
+        iy1 = y1[i]
+        ix2 = x2[i]
+        iy2 = y2[i]
+        iarea = areas[i]
+        for _j in range(_i + 1, ndets):
+            j = order[_j]
+            if suppressed[j] == 1:
+                continue
+            xx1 = max(ix1, x1[j])
+            yy1 = max(iy1, y1[j])
+            xx2 = min(ix2, x2[j])
+            yy2 = min(iy2, y2[j])
+            w = max(0.0, xx2 - xx1 + 1)
+            h = max(0.0, yy2 - yy1 + 1)
+            inter = w * h
+            ovr = inter / (iarea + areas[j] - inter)
+            if ovr >= thresh:
+                suppressed[j] = 1
+
+    return keep
+
+def show_image(image,bbox,score,target):
+    #PILImage ->to_tensor->torch->ToPilImage->cvimage
+    import torchvision
+    transforms=torchvision.transforms
+    imageshow = transforms.ToPILImage()(image).convert('RGB')
+    imageshow=np.transpose(imageshow,(0,1,2))
+
+    score_mask=score[:,0,0]>0.8
+    bbox=bbox[score_mask,0,:]
+    keep=nms(bbox,score[score_mask,0,0],0.9)
+    for idx in keep:
+        pt1=(int(bbox[idx,0]),int(bbox[idx,1]))
+        pt2=(int(bbox[idx,2]),int(bbox[idx,3]))
+        print(pt1)
+        print(pt2)
+        cv2.rectangle(imageshow,pt1,pt2,(0,255,0))
+    for e in target.bbox:
+        cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))
+    return imageshow
+
+
 def train():
     # parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
     # parser.add_argument(
@@ -258,8 +319,7 @@ def train():
 
         bbox_pred_np = bbox_pred.data.cpu().numpy()
         iou_pred_np = iou_pred.data.cpu().numpy()
-        _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask=build_target(bbox_pred_np,iou_pred_np,targets)
-
+        _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask, bbox_np=build_target(bbox_pred_np,iou_pred_np,targets)
         _boxes = np_to_variable(_boxes)
         _ious = np_to_variable(_ious)
         _classes = np_to_variable(_classes)
@@ -285,6 +345,16 @@ def train():
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        # write for tensorboard
+        writer.add_scalar("loss", loss, idx)
+        writer.add_scalar("lcls", cls_loss, idx)
+        writer.add_scalar("lobj", iou_loss, idx)
+        writer.add_scalar("lbox", bbox_loss, idx)
+
+        imageshow=show_image(images[0],bbox_np[0],iou_pred_np[0],targets[0])
+        writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
+        writer.add_image("score", output[0, 0].view(1, 112, 112), idx)
 
         print(bbox_pred)
 
