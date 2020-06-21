@@ -56,10 +56,10 @@ def train():
     from tensorboardX import SummaryWriter
     writer=SummaryWriter('log')
 
-    annotation_name="instances_val2014.json"
-    sub_data_path="val2014"
+    annotation_name="instances_val2017.json"
+    sub_data_path="val2017"
     # read data
-    coco_data_path="/media/tan/DATA/data/obstacle/train/coco"
+    coco_data_path="/home/tan/e_work/datasets/coco"
     annotation_file=os.path.join(coco_data_path,"annotations",annotation_name)
     dataset = json.load(open(annotation_file, 'r'))
     categories=dataset["categories"]
@@ -251,6 +251,7 @@ def train():
 
             # image_pil = Image.fromarray(cv2.cvtColor(image_copy, cv2.COLOR_BGR2RGB))
             writer.add_image("image",torch.from_numpy(image_copy).permute(2,0,1),iter)
+            writer.add_image("score", output[0,0].view(1,112,112), iter)
                 # writer.add_custom_scalars({'sum loss': loss, 'lcls': lcls, 'lobj': lobj,'lbox':lbox})
             if(iter%10000==0):
                 torch.save(net,"weights/iter_%d_%d.pth"%(epoch,iter))
