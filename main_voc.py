@@ -79,7 +79,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
     inp_size=[448,448]
     out_size=[112,112]
     anchors=np.array([[32,32]])
-    num_classes=20
+    num_classes=21
     coord_scale=1.0
     class_scale=1.0
     object_scale=1.0
@@ -266,8 +266,6 @@ def show_image(image,bbox,score,target):
     for idx in keep:
         pt1=(int(bbox[idx,0]),int(bbox[idx,1]))
         pt2=(int(bbox[idx,2]),int(bbox[idx,3]))
-        print(pt1)
-        print(pt2)
         cv2.rectangle(imageshow,pt1,pt2,(0,255,0))
     for e in target.bbox:
         cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))
@@ -306,7 +304,7 @@ def train():
     for idx,(images,targets,_) in enumerate(data_loader,0):
         output=net(torch.stack(images).cuda())
         bsize, _, h, w = output.size()
-        output=output.permute(0,2,3,1).contiguous().view(bsize,-1,1,25)
+        output=output.permute(0,2,3,1).contiguous().view(bsize,-1,1,26)
 
         # tx, ty, tw, th, to -> sig(tx), sig(ty), exp(tw), exp(th), sig(to)
         xy_pred = F.sigmoid(output[:, :, :, 0:2])
@@ -345,18 +343,18 @@ def train():
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        if(idx%10==0):
+            # write for tensorboard
+            writer.add_scalar("loss", loss, idx)
+            writer.add_scalar("lcls", cls_loss, idx)
+            writer.add_scalar("lobj", iou_loss, idx)
+            writer.add_scalar("lbox", bbox_loss, idx)
 
-        # write for tensorboard
-        writer.add_scalar("loss", loss, idx)
-        writer.add_scalar("lcls", cls_loss, idx)
-        writer.add_scalar("lobj", iou_loss, idx)
-        writer.add_scalar("lbox", bbox_loss, idx)
-
-        imageshow=show_image(images[0],bbox_np[0],iou_pred_np[0],targets[0])
-        writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
-        writer.add_image("score", output[0, 0].view(1, 112, 112), idx)
-
-        print(bbox_pred)
+            imageshow=show_image(images[0],bbox_np[0],iou_pred_np[0],targets[0])
+            writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
+            writer.add_image("score", output[0,:,0,4].view(1, 112, 112), idx)
+        if(idx%10000==0):
+            torch.save(net, "weights/iter_%d.pth" % (idx))
 
     return
 

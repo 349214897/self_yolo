@@ -65,7 +65,7 @@ class Yolo(nn.Module):
         self.conv8_2 = BaseBlockRelu(32, 32, 1, stride=1, padding=0, bias=False)
 
         # layer
-        self.layer1 = nn.Conv2d(32, 25, 3, 1, 1)
+        self.layer1 = nn.Conv2d(32, 26, 3, 1, 1)
         nn.init.kaiming_normal_(self.layer1.weight, mode='fan_in', nonlinearity='relu')
 
         for m in self.modules():
