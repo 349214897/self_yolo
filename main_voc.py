@@ -187,7 +187,8 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
             iou_pred_cell_anchor = iou_pred_np[b,cell_ind, a, :]
             _iou_mask[b,cell_ind, a, :] = object_scale * (1 - iou_pred_cell_anchor)  # noqa
             # _ious[cell_ind, a, :] = anchor_ious[a, i]
-            _ious[b,cell_ind, a, :] = ious_reshaped[cell_ind, a, i]
+            # _ious[b,cell_ind, a, :] = ious_reshaped[cell_ind, a, i]
+            _ious[b, cell_ind, a, :] = 1.0
 
             _box_mask[b,cell_ind, a, :] = coord_scale
             target_boxes[i, 2:4] /= anchors[a]
@@ -325,7 +326,7 @@ def train():
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2007", "train",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2007", "train",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
     batch_size=64
@@ -341,6 +342,7 @@ def train():
     # dataloader
     data_loader=torch.utils.data.DataLoader(dataset,collate_fn=BatchCollator(),batch_sampler=batch_sample,num_workers=4)
     net.train()  #start learning BN
+
     if(os.path.exists("weights")==False):
         os.mkdir("weights")
     for idx,(images,targets,_) in enumerate(data_loader,0):
@@ -393,7 +395,7 @@ def train():
             imageshow=show_image(images[0],bbox_np[0],iou_pred_np[0],targets[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
             writer.add_image("score", output[0,:,0,4].view(1, W, H), idx)
-            writer.add_image("target_score", output[0, :, 0, 4].view(1, W, H), idx)
+            writer.add_image("target_score", _ious[0].view(1, W, H), idx)
         if(idx%200==0):
             torch.save(net, "weights/iter_%d.pth" % (idx))
 
