@@ -2,6 +2,7 @@ import torch
 import os
 import torch.optim as optim
 from sfs_dw1 import Yolo
+from sfs_dw1 import SfsVps
 import cv2
 from collections import defaultdict
 import numpy as np
@@ -10,6 +11,7 @@ import torch.utils.data
 from dataset import voc
 from dataset import transform
 from torch.autograd import Variable
+from torch.utils.data.sampler import BatchSampler
 
 import torch.nn.functional as F
 
@@ -51,6 +53,34 @@ class BatchCollator(object):
         img_ids = transposed_batch[2]
         return images, targets, img_ids
 
+class IterationBasedBatchSampler(BatchSampler):
+    """
+    Wraps a BatchSampler, resampling from it until
+    a specified number of iterations have been sampled
+    """
+
+    def __init__(self, batch_sampler, num_iterations, start_iter=0):
+        self.batch_sampler = batch_sampler
+        self.num_iterations = num_iterations
+        self.start_iter = start_iter
+
+    def __iter__(self):
+        iteration = self.start_iter
+        while iteration <= self.num_iterations:
+            # if the underlying sampler has a set_epoch method, like
+            # DistributedSampler, used for making each process see
+            # a different split of the dataset, then set it
+            if hasattr(self.batch_sampler.sampler, "set_epoch"):
+                self.batch_sampler.sampler.set_epoch(iteration)
+            for batch in self.batch_sampler:
+                iteration += 1
+                if iteration > self.num_iterations:
+                    break
+                yield batch
+
+    def __len__(self):
+        return self.num_iterations
+
 def yolo_to_bbox(bbox_pred,H,W,anchors=np.ndarray(([32,32]))):
     bsize=bbox_pred.shape[0]
     num_anchors = anchors.shape[0]
@@ -75,16 +105,16 @@ def yolo_to_bbox(bbox_pred,H,W,anchors=np.ndarray(([32,32]))):
 def build_target(bbox_pred_np,iou_pred_np,targets):
     bsize = bbox_pred_np.shape[0]
 
-    H,W=112,112
+    H,W=14,14
     inp_size=[448,448]
-    out_size=[112,112]
-    anchors=np.array([[32,32]])
+    out_size=[14,14]
+    anchors=np.array([[3.6,3.6]])
     num_classes=21
     coord_scale=1.0
     class_scale=1.0
     object_scale=1.0
-    noobject_scale = 0.5
-    iou_thresh = 0.3
+    noobject_scale = 0.3
+    iou_thresh = 0.5
 
 
     hw,num_anchors,_=bbox_pred_np[bsize-1].shape
@@ -260,9 +290,9 @@ def show_image(image,bbox,score,target):
     imageshow = transforms.ToPILImage()(image).convert('RGB')
     imageshow=np.transpose(imageshow,(0,1,2))
 
-    score_mask=score[:,0,0]>0.8
+    score_mask=score[:,0,0]>0.1
     bbox=bbox[score_mask,0,:]
-    keep=nms(bbox,score[score_mask,0,0],0.9)
+    keep=nms(bbox,score[score_mask,0,0],0.7)
     for idx in keep:
         pt1=(int(bbox[idx,0]),int(bbox[idx,1]))
         pt2=(int(bbox[idx,2]),int(bbox[idx,3]))
@@ -283,7 +313,8 @@ def train():
     # )
 
 
-    net=Yolo(cfg=None)
+    # net=Yolo(cfg=None)
+    net=SfsVps(cfg=None)
     device = torch.device("cuda")
     net.to(device)
     # create your optimizer
@@ -294,13 +325,24 @@ def train():
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2007", "train",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2007", "train",transforms=transforms)
+
+    sample=torch.utils.data.RandomSampler(dataset)
+    batch_size=64
+    start_iter=0
+    max_iter=1000
+    W,H=14,14
+    batch_sample=torch.utils.data.BatchSampler(sample,batch_size,False)
+    batch_sample=IterationBasedBatchSampler(batch_sample,max_iter,start_iter=start_iter)
 
     train_loss = 0
     bbox_loss, iou_loss, cls_loss = 0., 0., 0.
 
     # dataloader
-    data_loader=torch.utils.data.DataLoader(dataset,collate_fn=BatchCollator(),batch_size=2)
+    data_loader=torch.utils.data.DataLoader(dataset,collate_fn=BatchCollator(),batch_sampler=batch_sample,num_workers=4)
+    net.train()  #start learning BN
+    if(os.path.exists("weights")==False):
+        os.mkdir("weights")
     for idx,(images,targets,_) in enumerate(data_loader,0):
         output=net(torch.stack(images).cuda())
         bsize, _, h, w = output.size()
@@ -340,10 +382,8 @@ def train():
         cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
         loss=bbox_loss+iou_loss+cls_loss
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        if(idx%10==0):
+        print("iter: %d, loss: %f, lcls: %f, lobj: %f ,lbox: %f"%(idx,loss,cls_loss,iou_loss,bbox_loss))
+        if(idx%1==0):
             # write for tensorboard
             writer.add_scalar("loss", loss, idx)
             writer.add_scalar("lcls", cls_loss, idx)
@@ -352,9 +392,14 @@ def train():
 
             imageshow=show_image(images[0],bbox_np[0],iou_pred_np[0],targets[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
-            writer.add_image("score", output[0,:,0,4].view(1, 112, 112), idx)
-        if(idx%10000==0):
+            writer.add_image("score", output[0,:,0,4].view(1, W, H), idx)
+            writer.add_image("target_score", output[0, :, 0, 4].view(1, W, H), idx)
+        if(idx%200==0):
             torch.save(net, "weights/iter_%d.pth" % (idx))
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
     return
 
