@@ -81,7 +81,7 @@ class IterationBasedBatchSampler(BatchSampler):
     def __len__(self):
         return self.num_iterations
 
-def yolo_to_bbox(bbox_pred,H,W,anchors=np.ndarray(([32,32]))):
+def yolo_to_bbox(bbox_pred,H,W,anchors):
     bsize=bbox_pred.shape[0]
     num_anchors = anchors.shape[0]
 
@@ -196,7 +196,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
 
             _class_mask[b,cell_ind, a, :] = class_scale
             _classes[b,cell_ind, a, gt_classes_b[i]] = 1.
-    return _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask, bbox_np
+    return _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask
 
 def bbox_ious(boxes,query_boxes):
     """
@@ -284,22 +284,54 @@ def nms(dets, scores, thresh):
 
     return keep
 
-def show_image(image,bbox,score,target):
+def show_image(image,bbox,score,target_box,target_score):
     #PILImage ->to_tensor->torch->ToPilImage->cvimage
     import torchvision
     transforms=torchvision.transforms
     imageshow = transforms.ToPILImage()(image).convert('RGB')
     imageshow=np.transpose(imageshow,(0,1,2))
 
-    score_mask=score[:,0,0]>0.1
-    bbox=bbox[score_mask,0,:]
-    keep=nms(bbox,score[score_mask,0,0],0.7)
+    pred_bbox_np=bbox.cpu().detach().numpy()
+    pred_score_np=score.cpu().detach().numpy()
+    target_bbox_np=target_box.cpu().numpy()
+    target_score_np=target_score.cpu().numpy()
+
+    anchors=np.array([[3.6,3.6]])
+    H,W=14,14
+    O_H,O_W =448,448
+
+    pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
+    target_bbox_np = np.expand_dims(target_bbox_np,0)
+
+    pred_score_mask=pred_score_np[:,0,0]>0.3
+    pred_bbox=yolo_to_bbox(pred_bbox_np,H,W,anchors)
+    pred_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
+    pred_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
+    pred_bbox=pred_bbox[0]
+
+    target_score_mask=target_score_np[:,0,0]>0.8
+    target_bbox=yolo_to_bbox(target_bbox_np,H,W,anchors)
+    target_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
+    target_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
+    target_bbox=target_bbox[0]
+
+    pred_bbox=pred_bbox[pred_score_mask,0,:]
+    keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.7)
     for idx in keep:
-        pt1=(int(bbox[idx,0]),int(bbox[idx,1]))
-        pt2=(int(bbox[idx,2]),int(bbox[idx,3]))
+        pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))
+        pt2=(int(pred_bbox[idx,2]),int(pred_bbox[idx,3]))
         cv2.rectangle(imageshow,pt1,pt2,(0,255,0))
-    for e in target.bbox:
-        cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))
+
+
+    target_bbox=target_bbox[target_score_mask,0,:]
+    keep=nms(target_bbox,target_score_np[target_score_mask,0,0],0.7)
+    for idx in keep:
+        pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
+        pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
+        cv2.rectangle(imageshow,pt1,pt2,(255,0,0))
+
+    # for e in target.bbox:
+    #     cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))
     return imageshow
 
 
@@ -326,12 +358,12 @@ def train():
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2007", "train",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
-    batch_size=64
+    batch_size=128
     start_iter=0
-    max_iter=1000
+    max_iter=100000
     W,H=14,14
     batch_sample=torch.utils.data.BatchSampler(sample,batch_size,False)
     batch_sample=IterationBasedBatchSampler(batch_sample,max_iter,start_iter=start_iter)
@@ -361,7 +393,7 @@ def train():
 
         bbox_pred_np = bbox_pred.data.cpu().numpy()
         iou_pred_np = iou_pred.data.cpu().numpy()
-        _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask, bbox_np=build_target(bbox_pred_np,iou_pred_np,targets)
+        _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask=build_target(bbox_pred_np,iou_pred_np,targets)
         _boxes = np_to_variable(_boxes)
         _ious = np_to_variable(_ious)
         _classes = np_to_variable(_classes)
@@ -392,7 +424,7 @@ def train():
             writer.add_scalar("lobj", iou_loss, idx)
             writer.add_scalar("lbox", bbox_loss, idx)
 
-            imageshow=show_image(images[0],bbox_np[0],iou_pred_np[0],targets[0])
+            imageshow=show_image(images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
             writer.add_image("score", output[0,:,0,4].view(1, W, H), idx)
             writer.add_image("target_score", _ious[0].view(1, W, H), idx)
