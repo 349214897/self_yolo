@@ -108,12 +108,12 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
     H,W=14,14
     inp_size=[448,448]
     out_size=[14,14]
-    anchors=np.array([[3.6,3.6]])
+    anchors=np.array([[14,14]])
     num_classes=21
     coord_scale=1.0
     class_scale=1.0
     object_scale=1.0
-    noobject_scale = 0.3
+    noobject_scale = 0.2
     iou_thresh = 0.5
 
 
@@ -127,7 +127,8 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
     _boxes = np.zeros([bsize,hw, num_anchors, 4], dtype=np.float)
     _boxes[:,:, :, 0:2] = 0.5
     _boxes[:,:, :, 2:4] = 1.0
-    _box_mask = np.zeros([bsize,hw, num_anchors, 1], dtype=np.float) + 0.01
+    # _box_mask = np.zeros([bsize,hw, num_anchors, 1], dtype=np.float) + 0.01
+    _box_mask = np.zeros([bsize, hw, num_anchors, 1], dtype=np.float)
 
 
     # scale pred_bbox
@@ -296,7 +297,7 @@ def show_image(image,bbox,score,target_box,target_score):
     target_bbox_np=target_box.cpu().numpy()
     target_score_np=target_score.cpu().numpy()
 
-    anchors=np.array([[3.6,3.6]])
+    anchors=np.array([[14,14]])
     H,W=14,14
     O_H,O_W =448,448
 
@@ -334,7 +335,6 @@ def show_image(image,bbox,score,target_box,target_score):
     #     cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))
     return imageshow
 
-
 def train():
     # parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
     # parser.add_argument(
@@ -358,10 +358,10 @@ def train():
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
-    batch_size=128
+    batch_size=96
     start_iter=0
     max_iter=100000
     W,H=14,14
@@ -384,7 +384,8 @@ def train():
 
         # tx, ty, tw, th, to -> sig(tx), sig(ty), exp(tw), exp(th), sig(to)
         xy_pred = F.sigmoid(output[:, :, :, 0:2])
-        wh_pred = torch.exp(output[:, :, :, 2:4])
+        # wh_pred = torch.exp(output[:, :, :, 2:4])
+        wh_pred = torch.sigmoid(output[:, :, :, 2:4])
         bbox_pred = torch.cat([xy_pred, wh_pred], 3)
         iou_pred = F.sigmoid(output[:, :, :, 4:5])
 
@@ -433,6 +434,8 @@ def train():
 
         optimizer.zero_grad()
         loss.backward()
+        # if(loss>20):
+        #     torch.nn.utils.clip_grad_norm_(net.parameters(), 2)
         optimizer.step()
 
     return
