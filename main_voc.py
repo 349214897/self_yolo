@@ -113,7 +113,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
     coord_scale=1.0
     class_scale=1.0
     object_scale=1.0
-    noobject_scale = 0.5
+    noobject_scale = 1.0
     iou_thresh = 0.5
 
 
@@ -158,7 +158,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
         )
         best_ious = np.max(ious, axis=1).reshape(_iou_mask[b].shape)
         iou_penalty = 0 - iou_pred_np[b,best_ious < iou_thresh]
-        _iou_mask[b,best_ious <= iou_thresh] = noobject_scale * iou_penalty
+        # _iou_mask[b,best_ious <= iou_thresh] = noobject_scale * iou_penalty
 
         # locate the cell of each gt_boxe
         cell_w = float(inp_size[0]) / W
@@ -177,6 +177,10 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
             (gt_boxes_b[:, 3] - gt_boxes_b[:, 1]) / inp_size[1] * out_size[1]  # th
 
         ious_reshaped = np.reshape(ious, [hw, num_anchors, len(cell_inds)])
+        pos_pt_num=len(cell_inds)
+        neg_pt_num=W*H-pos_pt_num
+        neg_pt_score=float(3*pos_pt_num)/float(neg_pt_num)
+        _iou_mask[b,best_ious <= iou_thresh] = noobject_scale*neg_pt_score
         for i, cell_ind in enumerate(cell_inds):
             if cell_ind >= hw or cell_ind < 0:
                 print('cell inds size {}'.format(len(cell_inds)))
@@ -186,53 +190,70 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
             a=0
             # 0 ~ 1, should be close to 1
             iou_pred_cell_anchor = iou_pred_np[b,cell_ind, a, :]
-            _iou_mask[b,cell_ind, a, :] = object_scale * (1 - iou_pred_cell_anchor)  # noqa
+            # _iou_mask[b,cell_ind, a, :] = object_scale * (1 - iou_pred_cell_anchor)  # noqa
             # _ious[cell_ind, a, :] = anchor_ious[a, i]
             # _ious[b,cell_ind, a, :] = ious_reshaped[cell_ind, a, i]
-            _ious[b, cell_ind, a, :] = 1.0
             h_ind=cell_ind/W
             w_ind=cell_ind%W
             if(h_ind-1)>=0:
                 tmp_ind=(h_ind-1)*W+w_ind
-                _ious[b,tmp_ind , a, :]=1.0
+                val=_ious[b,tmp_ind , a, :]
+                if(1.0-val<0.0001):
+                    continue
+                _ious[b,tmp_ind , a, :]=0.5
+                _iou_mask[b, tmp_ind, a, :]=1.0
                 _box_mask[b, tmp_ind, a, :]=coord_scale
                 temp_box=target_boxes[i].copy()
                 temp_box[1]=temp_box[1]+1
                 temp_box[2:4] /= anchors[a]
                 _boxes[b, tmp_ind, a, :] = temp_box
                 _class_mask[b, tmp_ind, a, :] = class_scale
-                _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.0
+                _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
             if(h_ind+1)<H:
                 tmp_ind=(h_ind+1)*W+w_ind
-                _ious[b,tmp_ind , a, :]=1.0
+                val=_ious[b,tmp_ind , a, :]
+                if(1.0-val<0.0001):
+                    continue
+                _ious[b,tmp_ind , a, :]=0.5
+                _iou_mask[b, tmp_ind, a, :] = 1.0
                 _box_mask[b, tmp_ind, a, :]=coord_scale
                 temp_box=target_boxes[i].copy()
                 temp_box[1]=temp_box[1]-1
                 temp_box[2:4] /= anchors[a]
                 _boxes[b, tmp_ind, a, :] = temp_box
                 _class_mask[b, tmp_ind, a, :] = class_scale
-                _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.
+                _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
             if(w_ind-1)>=0:
                 tmp_ind=h_ind*W+w_ind-1
-                _ious[b, tmp_ind, a, :]=1.0
+                val=_ious[b,tmp_ind , a, :]
+                if(1.0-val<0.0001):
+                    continue
+                _ious[b, tmp_ind, a, :]=0.5
+                _iou_mask[b, tmp_ind, a, :] = 1.0
                 _box_mask[b, tmp_ind, a, :]=coord_scale
                 temp_box=target_boxes[i].copy()
                 temp_box[0]=temp_box[0]+1
                 temp_box[2:4] /= anchors[a]
                 _boxes[b, tmp_ind, a, :] = temp_box
                 _class_mask[b, tmp_ind, a, :] = class_scale
-                _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.
+                _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
             if (w_ind + 1) <W:
                 tmp_ind=h_ind * W+w_ind+1
-                _ious[b, tmp_ind, a, :] = 1.0
+                val=_ious[b,tmp_ind , a, :]
+                if(1.0-val<0.0001):
+                    continue
+                _ious[b, tmp_ind, a, :] = 0.5
+                _iou_mask[b, tmp_ind, a, :] = 1.0
                 _box_mask[b, tmp_ind, a, :] = coord_scale
                 temp_box = target_boxes[i].copy()
                 temp_box[0] = temp_box[0] - 1
                 temp_box[2:4] /= anchors[a]
                 _boxes[b, tmp_ind, a, :] = temp_box
                 _class_mask[b, tmp_ind, a, :] = class_scale
-                _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.
+                _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
 
+            _ious[b, cell_ind, a, :] = 1.0
+            _iou_mask[b, cell_ind, a, :] = 1.0
             _box_mask[b,cell_ind, a, :] = coord_scale
             target_boxes[i, 2:4] /= anchors[a]
             _boxes[b,cell_ind, a, :] = target_boxes[i]
