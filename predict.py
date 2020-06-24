@@ -8,10 +8,10 @@ import torch
 import numpy as np
 
 #load weights
-root_path="/home/tan/e_work/datasets/VOC/VOC2012/JPEGImages"
+root_path="/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012/JPEGImages"
 lines=os.listdir(root_path)
 net=SfsVps(cfg=None)
-net = torch.load("/media/tan/B4FE-5315/self_yolo/weights/iter_31400.pth")
+net = torch.load("/home/tan/docker_workspace/self_yolo/weights/iter_52800.pth")
 # net.load_state_dict(state_dict)
 net.eval()
 
@@ -67,6 +67,13 @@ with torch.no_grad():
             pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))
             pt2=(int(pred_bbox[idx,2]),int(pred_bbox[idx,3]))
             cv2.rectangle(image,pt1,pt2,(0,255,0))
+            center=((pt1[0]+pt2[0])/2,(pt1[1]+pt2[1])/2)
+            cv2.circle(image,center,32,(255,0,0),3)
+            cv2.circle(image, center, 1, (255, 0, 0), 3)
+            lt=int(center[0]/32)*32,int(center[1]/32)*32
+            rb=lt[0]+32,lt[1]+32
+            cv2.rectangle(image, lt, rb, (0, 255, 255),3)
+
 
         cv2.imshow("image_res",image)
         cv2.waitKey(0)
