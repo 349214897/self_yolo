@@ -113,7 +113,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
     coord_scale=1.0
     class_scale=1.0
     object_scale=1.0
-    noobject_scale = 0.2
+    noobject_scale = 0.5
     iou_thresh = 0.5
 
 
@@ -190,6 +190,48 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
             # _ious[cell_ind, a, :] = anchor_ious[a, i]
             # _ious[b,cell_ind, a, :] = ious_reshaped[cell_ind, a, i]
             _ious[b, cell_ind, a, :] = 1.0
+            h_ind=cell_ind/W
+            w_ind=cell_ind%W
+            if(h_ind-1)>=0:
+                tmp_ind=(h_ind-1)*W+w_ind
+                _ious[b,tmp_ind , a, :]=1.0
+                _box_mask[b, tmp_ind, a, :]=coord_scale
+                temp_box=target_boxes[i].copy()
+                temp_box[1]=temp_box[1]+1
+                temp_box[2:4] /= anchors[a]
+                _boxes[b, tmp_ind, a, :] = temp_box
+                _class_mask[b, tmp_ind, a, :] = class_scale
+                _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.0
+            if(h_ind+1)<H:
+                tmp_ind=(h_ind+1)*W+w_ind
+                _ious[b,tmp_ind , a, :]=1.0
+                _box_mask[b, tmp_ind, a, :]=coord_scale
+                temp_box=target_boxes[i].copy()
+                temp_box[1]=temp_box[1]-1
+                temp_box[2:4] /= anchors[a]
+                _boxes[b, tmp_ind, a, :] = temp_box
+                _class_mask[b, tmp_ind, a, :] = class_scale
+                _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.
+            if(w_ind-1)>=0:
+                tmp_ind=h_ind*W+w_ind-1
+                _ious[b, tmp_ind, a, :]=1.0
+                _box_mask[b, tmp_ind, a, :]=coord_scale
+                temp_box=target_boxes[i].copy()
+                temp_box[0]=temp_box[0]+1
+                temp_box[2:4] /= anchors[a]
+                _boxes[b, tmp_ind, a, :] = temp_box
+                _class_mask[b, tmp_ind, a, :] = class_scale
+                _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.
+            if (w_ind + 1) <W:
+                tmp_ind=h_ind * W+w_ind+1
+                _ious[b, tmp_ind, a, :] = 1.0
+                _box_mask[b, tmp_ind, a, :] = coord_scale
+                temp_box = target_boxes[i].copy()
+                temp_box[0] = temp_box[0] - 1
+                temp_box[2:4] /= anchors[a]
+                _boxes[b, tmp_ind, a, :] = temp_box
+                _class_mask[b, tmp_ind, a, :] = class_scale
+                _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.
 
             _box_mask[b,cell_ind, a, :] = coord_scale
             target_boxes[i, 2:4] /= anchors[a]
@@ -330,6 +372,12 @@ def show_image(image,bbox,score,target_box,target_score):
         pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
         pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
         cv2.rectangle(imageshow,pt1,pt2,(255,0,0))
+        center = ((pt1[0] + pt2[0]) / 2, (pt1[1] + pt2[1]) / 2)
+        cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
+        cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
+        lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
+        rb = lt[0] + 32, lt[1] + 32
+        cv2.rectangle(imageshow, lt, rb, (0, 255, 255), 3)
 
     # for e in target.bbox:
     #     cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))
@@ -383,7 +431,7 @@ def train():
         output=output.permute(0,2,3,1).contiguous().view(bsize,-1,1,26)
 
         # tx, ty, tw, th, to -> sig(tx), sig(ty), exp(tw), exp(th), sig(to)
-        xy_pred = F.sigmoid(output[:, :, :, 0:2])
+        xy_pred = 2*torch.tanh(output[:, :, :, 0:2])
         # wh_pred = torch.exp(output[:, :, :, 2:4])
         wh_pred = torch.sigmoid(output[:, :, :, 2:4])
         bbox_pred = torch.cat([xy_pred, wh_pred], 3)
