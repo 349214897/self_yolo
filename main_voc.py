@@ -112,8 +112,8 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
     num_classes=21
     coord_scale=1.0
     class_scale=1.0
-    object_scale=1.0
-    noobject_scale = 1.0
+    object_scale=3.0
+    noobject_scale = 3.0
     iou_thresh = 0.5
 
 
@@ -180,7 +180,8 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
         pos_pt_num=len(cell_inds)
         neg_pt_num=W*H-pos_pt_num
         neg_pt_score=float(3*pos_pt_num)/float(neg_pt_num)
-        _iou_mask[b,best_ious <= iou_thresh] = noobject_scale*neg_pt_score
+        # _iou_mask[b,best_ious <= iou_thresh] = noobject_scale*neg_pt_score
+        _iou_mask[b, best_ious <= iou_thresh] = noobject_scale*0.02
         for i, cell_ind in enumerate(cell_inds):
             if cell_ind >= hw or cell_ind < 0:
                 print('cell inds size {}'.format(len(cell_inds)))
@@ -393,7 +394,7 @@ def show_image(image,bbox,score,target_box,target_score):
         pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
         pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
         cv2.rectangle(imageshow,pt1,pt2,(255,0,0))
-        center = ((pt1[0] + pt2[0]) / 2, (pt1[1] + pt2[1]) / 2)
+        center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
         cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
         cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
         lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
@@ -417,6 +418,7 @@ def train():
 
     # net=Yolo(cfg=None)
     net=SfsVps(cfg=None)
+    net=torch.load("/home/tan/e_work/project/self_yolo/weights_0625/iter_5800.pth")
     device = torch.device("cuda")
     net.to(device)
     # create your optimizer
@@ -427,7 +429,7 @@ def train():
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
     batch_size=128
@@ -496,7 +498,7 @@ def train():
 
             imageshow=show_image(images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
-            writer.add_image("score", output[0,:,0,4].view(1, W, H), idx)
+            writer.add_image("score", iou_pred[0].view(1, W, H), idx)
             writer.add_image("target_score", _ious[0].view(1, W, H), idx)
         if(idx%200==0):
             torch.save(net, "weights/iter_%d.pth" % (idx))
