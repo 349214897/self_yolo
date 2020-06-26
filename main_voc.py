@@ -102,6 +102,33 @@ def yolo_to_bbox(bbox_pred,H,W,anchors):
                     bbox_out[b, ind, a, 3] = cy + bh
     return bbox_out
 
+def no_anchor_to_bbox(bbox_pred,H,W):
+    bsize=bbox_pred.shape[0]
+    num_anchors=1
+    bbox_out = np.zeros((bsize,H*W,num_anchors,4),dtype=float)
+    for b in range(bsize):
+        for row in range(H):
+            for col in range(W):
+                ind = row * W + col
+                for a in range(num_anchors):
+                    if(col+0.5-bbox_pred[b, ind, a, 0]*W>0):
+                        bbox_out[b, ind, a, 0] = (col+0.5)/W-bbox_pred[b, ind, a, 0]
+                    else:
+                        bbox_out[b, ind, a, 0] = 0
+                    if(row+0.5-bbox_pred[b, ind, a, 1]*H>0):
+                        bbox_out[b, ind, a, 1] = (row+0.5)/H-bbox_pred[b, ind, a, 1]
+                    else:
+                        bbox_out[b, ind, a, 1] = 0
+                    if(col+0.5+bbox_pred[b, ind, a, 2]*W<W):
+                        bbox_out[b, ind, a, 2] = (col+0.5)/W+bbox_pred[b, ind, a, 2]
+                    else:
+                        bbox_out[b, ind, a, 2] = 1
+                    if(row+0.5+bbox_pred[b, ind, a, 3]*H<H):
+                        bbox_out[b, ind, a, 3] = (row+0.5)/H+bbox_pred[b, ind, a, 3]
+                    else:
+                        bbox_out[b, ind, a, 3] = 1
+    return bbox_out
+
 def build_target(bbox_pred_np,iou_pred_np,targets):
     bsize = bbox_pred_np.shape[0]
 
@@ -134,9 +161,9 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
     # scale pred_bbox
 
     # bbox_pred_np = np.expand_dims(bbox_pred_np, 0)
-    bbox_np = yolo_to_bbox(
+    bbox_np = no_anchor_to_bbox(
         np.ascontiguousarray(bbox_pred_np, dtype=np.float),
-        H, W,anchors)
+        H, W)
     # bbox_np = (hw, num_anchors, (x1, y1, x2, y2))   range: 0 ~ 1
 
     bbox_np[:,:, :, 0::2] *= float(inp_size[0])  # rescale x
@@ -168,6 +195,9 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
         cell_inds = np.floor(cy) * W + np.floor(cx)
         cell_inds = cell_inds.int()
 
+        box_w = (gt_boxes_b[:, 2] - gt_boxes_b[:, 0])/cell_w
+        box_h = (gt_boxes_b[:, 3] - gt_boxes_b[:, 1])/cell_w
+
         target_boxes = np.empty(gt_boxes_b.shape, dtype=np.float)
         target_boxes[:, 0] = cx - np.floor(cx)  # cx
         target_boxes[:, 1] = cy - np.floor(cy)  # cy
@@ -180,7 +210,8 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
         pos_pt_num=len(cell_inds)
         neg_pt_num=W*H-pos_pt_num
         neg_pt_score=float(3*pos_pt_num)/float(neg_pt_num)
-        _iou_mask[b,best_ious <= iou_thresh] = noobject_scale*neg_pt_score
+        # _iou_mask[b,best_ious <= iou_thresh] = noobject_scale*neg_pt_score
+        _iou_mask[b, best_ious <= iou_thresh] = noobject_scale*0.02
         for i, cell_ind in enumerate(cell_inds):
             if cell_ind >= hw or cell_ind < 0:
                 print('cell inds size {}'.format(len(cell_inds)))
@@ -195,71 +226,35 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
             # _ious[b,cell_ind, a, :] = ious_reshaped[cell_ind, a, i]
             h_ind=cell_ind/W
             w_ind=cell_ind%W
-            if(h_ind-1)>=0:
-                tmp_ind=(h_ind-1)*W+w_ind
-                val=_ious[b,tmp_ind , a, :]
-                if(1.0-val<0.0001):
-                    continue
-                _ious[b,tmp_ind , a, :]=0.5
-                _iou_mask[b, tmp_ind, a, :]=1.0
-                _box_mask[b, tmp_ind, a, :]=coord_scale
-                temp_box=target_boxes[i].copy()
-                temp_box[1]=temp_box[1]+1
-                temp_box[2:4] /= anchors[a]
-                _boxes[b, tmp_ind, a, :] = temp_box
-                _class_mask[b, tmp_ind, a, :] = class_scale
-                _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
-            if(h_ind+1)<H:
-                tmp_ind=(h_ind+1)*W+w_ind
-                val=_ious[b,tmp_ind , a, :]
-                if(1.0-val<0.0001):
-                    continue
-                _ious[b,tmp_ind , a, :]=0.5
-                _iou_mask[b, tmp_ind, a, :] = 1.0
-                _box_mask[b, tmp_ind, a, :]=coord_scale
-                temp_box=target_boxes[i].copy()
-                temp_box[1]=temp_box[1]-1
-                temp_box[2:4] /= anchors[a]
-                _boxes[b, tmp_ind, a, :] = temp_box
-                _class_mask[b, tmp_ind, a, :] = class_scale
-                _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
-            if(w_ind-1)>=0:
-                tmp_ind=h_ind*W+w_ind-1
-                val=_ious[b,tmp_ind , a, :]
-                if(1.0-val<0.0001):
-                    continue
-                _ious[b, tmp_ind, a, :]=0.5
-                _iou_mask[b, tmp_ind, a, :] = 1.0
-                _box_mask[b, tmp_ind, a, :]=coord_scale
-                temp_box=target_boxes[i].copy()
-                temp_box[0]=temp_box[0]+1
-                temp_box[2:4] /= anchors[a]
-                _boxes[b, tmp_ind, a, :] = temp_box
-                _class_mask[b, tmp_ind, a, :] = class_scale
-                _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
-            if (w_ind + 1) <W:
-                tmp_ind=h_ind * W+w_ind+1
-                val=_ious[b,tmp_ind , a, :]
-                if(1.0-val<0.0001):
-                    continue
-                _ious[b, tmp_ind, a, :] = 0.5
-                _iou_mask[b, tmp_ind, a, :] = 1.0
-                _box_mask[b, tmp_ind, a, :] = coord_scale
-                temp_box = target_boxes[i].copy()
-                temp_box[0] = temp_box[0] - 1
-                temp_box[2:4] /= anchors[a]
-                _boxes[b, tmp_ind, a, :] = temp_box
-                _class_mask[b, tmp_ind, a, :] = class_scale
-                _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
 
-            _ious[b, cell_ind, a, :] = 1.0
-            _iou_mask[b, cell_ind, a, :] = 1.0
-            _box_mask[b,cell_ind, a, :] = coord_scale
-            target_boxes[i, 2:4] /= anchors[a]
-            _boxes[b,cell_ind, a, :] = target_boxes[i]
+            rad = int(torch.sqrt(box_w[i]*box_w[i]+box_h[i]*box_h[i])*0.1)
+            if(rad<1):
+                rad=1
+            for m in range(-rad,rad+1):
+                for n in range(-rad,rad+1):
+                    if(h_ind+m<0 or h_ind+m>=H):
+                        continue
+                    if(w_ind+n<0 or w_ind+n>=W):
+                        continue
+                    tmp_ind = (h_ind+m) * W + w_ind+n
+                    val = _ious[b, tmp_ind, a, :]
+                    if (1.0 - val < 0.0001):
+                        continue
+                    probability=1.0/(np.sqrt(m*m+n*n+1))
+                    if (probability<val):
+                        continue
+                    _ious[b, tmp_ind, a, :] = probability
+                    _iou_mask[b, tmp_ind, a, :] = object_scale
+                    _box_mask[b, tmp_ind, a, :] = coord_scale
+                    temp_box = gt_boxes_b[i].numpy().copy()
+                    temp_box[0::2]=temp_box[0::2]/inp_size[0]*out_size[0]
+                    temp_box[1::2] = temp_box[1::2] / inp_size[1] * out_size[1]
+                    temp_box[0::2]=np.abs(temp_box[0::2]-w_ind.numpy()-0.5)/W
+                    temp_box[1::2] = np.abs(temp_box[1::2] -h_ind.numpy()-0.5)/H
+                    _boxes[b, tmp_ind, a, :] = temp_box
+                    _class_mask[b, tmp_ind, a, :] = class_scale
+                    _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
 
-            _class_mask[b,cell_ind, a, :] = class_scale
-            _classes[b,cell_ind, a, gt_classes_b[i]] = 1.
     return _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask
 
 def bbox_ious(boxes,query_boxes):
@@ -368,13 +363,13 @@ def show_image(image,bbox,score,target_box,target_score):
     target_bbox_np = np.expand_dims(target_bbox_np,0)
 
     pred_score_mask=pred_score_np[:,0,0]>0.3
-    pred_bbox=yolo_to_bbox(pred_bbox_np,H,W,anchors)
+    pred_bbox=no_anchor_to_bbox(pred_bbox_np,H,W)
     pred_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     pred_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
     pred_bbox=pred_bbox[0]
 
     target_score_mask=target_score_np[:,0,0]>0.8
-    target_bbox=yolo_to_bbox(target_bbox_np,H,W,anchors)
+    target_bbox=no_anchor_to_bbox(target_bbox_np,H,W)
     target_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     target_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
     target_bbox=target_bbox[0]
@@ -393,7 +388,7 @@ def show_image(image,bbox,score,target_box,target_score):
         pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
         pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
         cv2.rectangle(imageshow,pt1,pt2,(255,0,0))
-        center = ((pt1[0] + pt2[0]) / 2, (pt1[1] + pt2[1]) / 2)
+        center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
         cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
         cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
         lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
@@ -403,6 +398,35 @@ def show_image(image,bbox,score,target_box,target_score):
     # for e in target.bbox:
     #     cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))
     return imageshow
+
+def iou_loss(pred_boxs,target_boxs,iou_mask):
+
+    qbox_area = (
+        (target_boxs[:,:,:, 2] - target_boxs[:,:,:, 0] + 1) *
+        (target_boxs[:,:,:, 3] - target_boxs[:,:,:, 1] + 1)
+    )
+
+    iw = (
+        torch.min(pred_boxs[:,:,:, 2], target_boxs[:,:,:, 2]) -
+        torch.max(pred_boxs[:,:,:, 0], target_boxs[:,:,:, 0]) +1
+    )
+
+    ih = (
+            torch.min(pred_boxs[:,:,:, 3], target_boxs[:,:,:, 3]) -
+            torch.max(pred_boxs[:,:,:, 1], target_boxs[:,:,:, 1]) + 1
+    )
+
+    box_area = (
+        (pred_boxs[:,:,:, 2] - pred_boxs[:,:,:, 0] + 1) *
+        (pred_boxs[:,:,:, 3] - pred_boxs[:,:,:, 1] + 1)
+    )
+    inter_area = iw * ih
+    intersec = torch.zeros(box_area.shape).cuda()
+    wh_mask = (ih > 0) & (iw > 0) & (iou_mask[:, :, 0, :] > 0)
+    intersec[wh_mask] = inter_area[wh_mask] / (qbox_area[wh_mask] + box_area[wh_mask] - inter_area[wh_mask])
+    box_loss= -1 * torch.log(intersec[wh_mask]*iou_mask[:,:,0,:][wh_mask])
+    box_loss=box_loss.sum() / ((box_loss > 0).sum() + 1)
+    return box_loss
 
 def train():
     # parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
@@ -417,6 +441,7 @@ def train():
 
     # net=Yolo(cfg=None)
     net=SfsVps(cfg=None)
+    # net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou/weights/iter_200.pth")
     device = torch.device("cuda")
     net.to(device)
     # create your optimizer
@@ -427,10 +452,10 @@ def train():
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
-    batch_size=128
+    batch_size=256
     start_iter=0
     max_iter=100000
     W,H=14,14
@@ -438,7 +463,7 @@ def train():
     batch_sample=IterationBasedBatchSampler(batch_sample,max_iter,start_iter=start_iter)
 
     train_loss = 0
-    bbox_loss, iou_loss, cls_loss = 0., 0., 0.
+    bbox_loss, pt_loss, cls_loss = 0., 0., 0.
 
     # dataloader
     data_loader=torch.utils.data.DataLoader(dataset,collate_fn=BatchCollator(),batch_sampler=batch_sample,num_workers=4)
@@ -452,10 +477,11 @@ def train():
         output=output.permute(0,2,3,1).contiguous().view(bsize,-1,1,26)
 
         # tx, ty, tw, th, to -> sig(tx), sig(ty), exp(tw), exp(th), sig(to)
-        xy_pred = 2*torch.tanh(output[:, :, :, 0:2])
-        # wh_pred = torch.exp(output[:, :, :, 2:4])
-        wh_pred = torch.sigmoid(output[:, :, :, 2:4])
-        bbox_pred = torch.cat([xy_pred, wh_pred], 3)
+        # xy_pred = 2*torch.tanh(output[:, :, :, 0:2])
+        # # wh_pred = torch.exp(output[:, :, :, 2:4])
+        # wh_pred = torch.sigmoid(output[:, :, :, 2:4])
+        # bbox_pred = torch.cat([xy_pred, wh_pred], 3)
+        bbox_pred = torch.sigmoid(output[:, :, :, 0:4])
         iou_pred = F.sigmoid(output[:, :, :, 4:5])
 
         score_pred = output[:, :, :, 5:].contiguous()
@@ -477,26 +503,27 @@ def train():
         num_boxes = sum((boxes.bbox.shape[0] for boxes in targets))
 
         # _boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
-        box_mask = box_mask.expand_as(_boxes)
+        # box_mask = box_mask.expand_as(_boxes)
 
-        bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
-        iou_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
+        # bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+        bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)
+        pt_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
 
         class_mask = class_mask.expand_as(prob_pred)
         cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
-        loss=bbox_loss+iou_loss+cls_loss
+        loss=bbox_loss*3+pt_loss+cls_loss
 
-        print("iter: %d, loss: %f, lcls: %f, lobj: %f ,lbox: %f"%(idx,loss,cls_loss,iou_loss,bbox_loss))
+        print("iter: %d, loss: %f, lcls: %f, lobj: %f ,lbox: %f"%(idx,loss,cls_loss,pt_loss,bbox_loss))
         if(idx%1==0):
             # write for tensorboard
             writer.add_scalar("loss", loss, idx)
             writer.add_scalar("lcls", cls_loss, idx)
-            writer.add_scalar("lobj", iou_loss, idx)
+            writer.add_scalar("lobj", pt_loss, idx)
             writer.add_scalar("lbox", bbox_loss, idx)
 
             imageshow=show_image(images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
-            writer.add_image("score", output[0,:,0,4].view(1, W, H), idx)
+            writer.add_image("score", iou_pred[0].view(1, W, H), idx)
             writer.add_image("target_score", _ious[0].view(1, W, H), idx)
         if(idx%200==0):
             torch.save(net, "weights/iter_%d.pth" % (idx))
