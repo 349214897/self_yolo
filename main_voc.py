@@ -227,9 +227,25 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
             h_ind=cell_ind/W
             w_ind=cell_ind%W
 
-            rad = int(torch.sqrt(box_w[i]*box_w[i]+box_h[i]*box_h[i])*0.1)
+            pos_range=0.3
+            ignore_range=0.7
+            rad = int(torch.sqrt(box_w[i]*box_w[i]+box_h[i]*box_h[i])*pos_range/2)
             if(rad<1):
                 rad=1
+            rad_ignore=int(rad*ignore_range/pos_range)
+            for m in range(rad_ignore,rad_ignore+1):
+                for n in range(-rad_ignore,rad_ignore+1):
+                    if(h_ind+m<0 or h_ind+m>=H):
+                        continue
+                    if(w_ind+n<0 or w_ind+n>=W):
+                        continue
+                    tmp_ind = (h_ind + m) * W + w_ind + n
+                    val = _ious[b, tmp_ind, a, :]
+                    if (1.0 - val < 0.0001):
+                        continue
+                    #use mask to ignore compute loss
+                    _iou_mask[b, tmp_ind, a, :] = 0
+
             for m in range(-rad,rad+1):
                 for n in range(-rad,rad+1):
                     if(h_ind+m<0 or h_ind+m>=H):
@@ -237,23 +253,23 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
                     if(w_ind+n<0 or w_ind+n>=W):
                         continue
                     tmp_ind = (h_ind+m) * W + w_ind+n
-                    val = _ious[b, tmp_ind, a, :]
+                    val = _iou_mask[b, tmp_ind, a, :]
                     if (1.0 - val < 0.0001):
                         continue
                     probability=1.0/(np.sqrt(m*m+n*n+1))
                     if (probability<val):
                         continue
-                    _ious[b, tmp_ind, a, :] = probability
-                    _iou_mask[b, tmp_ind, a, :] = object_scale
+                    _ious[b, tmp_ind, a, :] = 1.0
+                    _iou_mask[b, tmp_ind, a, :] = object_scale*probability
                     _box_mask[b, tmp_ind, a, :] = coord_scale
                     temp_box = gt_boxes_b[i].numpy().copy()
                     temp_box[0::2]=temp_box[0::2]/inp_size[0]*out_size[0]
                     temp_box[1::2] = temp_box[1::2] / inp_size[1] * out_size[1]
-                    temp_box[0::2]=np.abs(temp_box[0::2]-w_ind.numpy()-0.5)/W
-                    temp_box[1::2] = np.abs(temp_box[1::2] -h_ind.numpy()-0.5)/H
+                    temp_box[0::2]=np.abs(temp_box[0::2]-w_ind.numpy()-n-0.5)/W
+                    temp_box[1::2] = np.abs(temp_box[1::2] -h_ind.numpy()-m-0.5)/H
                     _boxes[b, tmp_ind, a, :] = temp_box
                     _class_mask[b, tmp_ind, a, :] = class_scale
-                    _classes[b, tmp_ind, a, gt_classes_b[i]] = 0.5
+                    _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.0
 
     return _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask
 
@@ -425,8 +441,18 @@ def iou_loss(pred_boxs,target_boxs,iou_mask):
     wh_mask = (ih > 0) & (iw > 0) & (iou_mask[:, :, 0, :] > 0)
     intersec[wh_mask] = inter_area[wh_mask] / (qbox_area[wh_mask] + box_area[wh_mask] - inter_area[wh_mask])
     box_loss= -1 * torch.log(intersec[wh_mask]*iou_mask[:,:,0,:][wh_mask])
-    box_loss=box_loss.sum() / ((box_loss > 0).sum() + 1)
+    box_loss=box_loss.sum()
     return box_loss
+
+def focal_loss(pred_score,target_score,mask):
+    eps=0.000001
+    alpha=0.5
+    gamma=2
+    logpt = torch.log(pred_score + eps)
+    lognpt = torch.log((1-pred_score) + eps)
+    loss_positive = -1*alpha*(target_score-eps>0)*mask*logpt*(1-pred_score)**gamma
+    loss_negtive = -1*(1-alpha)*(target_score-eps<0)*mask*lognpt*pred_score**gamma
+    return (loss_negtive+loss_positive).sum()
 
 def train():
     # parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
@@ -506,21 +532,23 @@ def train():
         # box_mask = box_mask.expand_as(_boxes)
 
         # bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
-        bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)
-        pt_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
+        bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)/num_boxes
+        # pt_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
+        #focalloss
+        pt_loss = focal_loss(iou_pred,_ious,iou_mask)/num_boxes
 
         class_mask = class_mask.expand_as(prob_pred)
-        cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask) / num_boxes  # noqa
-        loss=bbox_loss*3+pt_loss+cls_loss
+        cls_loss = nn.MSELoss(size_average=False)(prob_pred * class_mask, _classes * class_mask)/num_boxes   # noqa
+        loss=bbox_loss+pt_loss*5+cls_loss
 
         print("iter: %d, loss: %f, lcls: %f, lobj: %f ,lbox: %f"%(idx,loss,cls_loss,pt_loss,bbox_loss))
-        if(idx%1==0):
-            # write for tensorboard
-            writer.add_scalar("loss", loss, idx)
-            writer.add_scalar("lcls", cls_loss, idx)
-            writer.add_scalar("lobj", pt_loss, idx)
-            writer.add_scalar("lbox", bbox_loss, idx)
 
+        # write for tensorboard
+        writer.add_scalar("loss", loss, idx)
+        writer.add_scalar("lcls", cls_loss, idx)
+        writer.add_scalar("lobj", pt_loss * 5, idx)
+        writer.add_scalar("lbox", bbox_loss, idx)
+        if(idx%5==0):
             imageshow=show_image(images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
             writer.add_image("score", iou_pred[0].view(1, W, H), idx)

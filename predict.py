@@ -8,10 +8,10 @@ import torch
 import numpy as np
 
 #load weights
-root_path="/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012/JPEGImages"
+root_path="/home/tan/e_work/datasets/VOC/VOC2012/JPEGImages"
 lines=os.listdir(root_path)
 net=SfsVps(cfg=None)
-net = torch.load("/home/tan/docker_workspace/self_yolo/weights/iter_52800.pth")
+net = torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights/iter_8400.pth")
 # net.load_state_dict(state_dict)
 net.eval()
 
@@ -31,10 +31,10 @@ with torch.no_grad():
         output = output.permute(0, 2, 3, 1).contiguous().view(bsize, -1, 1, 26)
         import torch.nn.functional as F1
         # tx, ty, tw, th, to -> sig(tx), sig(ty), exp(tw), exp(th), sig(to)
-        xy_pred = F1.sigmoid(output[:, :, :, 0:2])
-        # wh_pred = torch.exp(output[:, :, :, 2:4])
-        wh_pred = torch.sigmoid(output[:, :, :, 2:4])
-        bbox = torch.cat([xy_pred, wh_pred], 3)
+        # xy_pred = F1.sigmoid(output[:, :, :, 0:2])
+        # # wh_pred = torch.exp(output[:, :, :, 2:4])
+        # wh_pred = torch.sigmoid(output[:, :, :, 2:4])
+        bbox = torch.sigmoid(output[:, :, :, 0:4])
         score = F1.sigmoid(output[:, :, :, 4:5])
 
         import torchvision
@@ -53,9 +53,10 @@ with torch.no_grad():
         O_H,O_W =448,448
 
         pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
-        pred_score_mask=pred_score_np[:,0,0]>0.7
+        pred_score_mask=pred_score_np[:,0,0]>0.8
 
-        pred_bbox=main_voc.yolo_to_bbox(pred_bbox_np,H,W,anchors)
+        # pred_bbox=main_voc.yolo_to_bbox(pred_bbox_np,H,W,anchors)
+        pred_bbox = main_voc.no_anchor_to_bbox(pred_bbox_np, H, W)
         pred_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
         pred_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
         pred_bbox=pred_bbox[0]
@@ -67,7 +68,7 @@ with torch.no_grad():
             pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))
             pt2=(int(pred_bbox[idx,2]),int(pred_bbox[idx,3]))
             cv2.rectangle(image,pt1,pt2,(0,255,0))
-            center=((pt1[0]+pt2[0])/2,(pt1[1]+pt2[1])/2)
+            center=(int((pt1[0]+pt2[0])/2),int((pt1[1]+pt2[1])/2))
             cv2.circle(image,center,32,(255,0,0),3)
             cv2.circle(image, center, 1, (255, 0, 0), 3)
             lt=int(center[0]/32)*32,int(center[1]/32)*32
