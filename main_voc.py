@@ -12,6 +12,8 @@ from dataset import voc
 from dataset import transform
 from torch.autograd import Variable
 from torch.utils.data.sampler import BatchSampler
+from backbone import trcnet
+from torchvision import models
 
 import torch.nn.functional as F
 
@@ -447,11 +449,11 @@ def iou_loss(pred_boxs,target_boxs,iou_mask):
 def focal_loss(pred_score,target_score,mask):
     eps=0.000001
     alpha=0.5
-    gamma=2
+    gamma=2.0
     logpt = torch.log(pred_score + eps)
-    lognpt = torch.log((1-pred_score) + eps)
-    loss_positive = -1*alpha*(target_score-eps>0)*mask*logpt*(1-pred_score)**gamma
-    loss_negtive = -1*(1-alpha)*(target_score-eps<0)*mask*lognpt*pred_score**gamma
+    lognpt = torch.log((1.0-pred_score) + eps)
+    loss_positive = -1.0*alpha*(target_score-eps>0.0).float()*mask*logpt*(1.0-pred_score)**gamma
+    loss_negtive = -1.0*(1.0-alpha)*(target_score-eps<0.0).float()*mask*lognpt*pred_score**gamma
     return (loss_negtive+loss_positive).sum()
 
 def train():
@@ -466,10 +468,20 @@ def train():
 
 
     # net=Yolo(cfg=None)
-    net=SfsVps(cfg=None)
+    # net=SfsVps(cfg=None)
+    net =trcnet.trcnet50()
+    # load pretrain resnet50
+    model_dict=net.state_dict()
+    res_net=models.resnet50(pretrained=True)
+    pretrained_dict=res_net.state_dict()
+    pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+    model_dict.update(pretrained_dict)
+    net.load_state_dict(model_dict)
+
     # net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou/weights/iter_200.pth")
     device = torch.device("cuda")
     net.to(device)
+
     # create your optimizer
     optimizer = optim.SGD(net.parameters(), lr=0.01)
     # in your training loop:
@@ -478,10 +490,10 @@ def train():
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
-    batch_size=256
+    batch_size=16
     start_iter=0
     max_iter=100000
     W,H=14,14
@@ -499,6 +511,7 @@ def train():
         os.mkdir("weights")
     for idx,(images,targets,_) in enumerate(data_loader,0):
         output=net(torch.stack(images).cuda())
+
         bsize, _, h, w = output.size()
         output=output.permute(0,2,3,1).contiguous().view(bsize,-1,1,26)
 
