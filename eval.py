@@ -1,8 +1,8 @@
 from collections import OrderedDict, defaultdict
 from sfs_dw1 import SfsVps
-from .main_voc import no_anchor_to_bbox
-from .main_voc import IterationBasedBatchSampler
-from .main_voc import BatchCollator
+from main_voc import no_anchor_to_bbox
+from main_voc import IterationBasedBatchSampler
+from main_voc import BatchCollator
 from dataset import voc
 from dataset import transform
 import torch
@@ -12,9 +12,9 @@ import numpy as np
 _predictions = defaultdict(list)
 
 
-def process(self, inputs, outputs):
+def process():
     net=SfsVps(cfg=None)
-    net=torch.load()
+    net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights/iter_8400.pth")
     W,H=14,14
     IW,IH=448,448
     device = torch.device("cuda")
@@ -22,7 +22,7 @@ def process(self, inputs, outputs):
     transforms = transform.Transform()
     dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
     sample=torch.utils.data.RandomSampler(dataset)
-    batch_size=256
+    batch_size=8
     start_iter=0
     max_iter=100000
     batch_sample=torch.utils.data.BatchSampler(sample,batch_size,False)
@@ -55,19 +55,22 @@ def process(self, inputs, outputs):
             score = iou_pred
             cat = prob_pred
             for b in range(bsize):
+                bboxes=bbox_np[b,:,:,0:4].view(-1,4)
 
 
+    # for input, output in zip(inputs, outputs):
+    #     image_id = input["image_id"]
+    #     boxes = instances.pred_boxes.tensor.numpy()
+    #     scores = instances.scores.tolist()
+    #     classes = instances.pred_classes.tolist()
+    #     for box, score, cls in zip(boxes, scores, classes):
+    #         xmin, ymin, xmax, ymax = box
+    #         # The inverse of data loading logic in `datasets/pascal_voc.py`
+    #         xmin += 1
+    #         ymin += 1
+    #         _predictions[cls].append(
+    #             f"{image_id} {score:.3f} {xmin:.1f} {ymin:.1f} {xmax:.1f} {ymax:.1f}"
+    #         )
 
-    for input, output in zip(inputs, outputs):
-        image_id = input["image_id"]
-        boxes = instances.pred_boxes.tensor.numpy()
-        scores = instances.scores.tolist()
-        classes = instances.pred_classes.tolist()
-        for box, score, cls in zip(boxes, scores, classes):
-            xmin, ymin, xmax, ymax = box
-            # The inverse of data loading logic in `datasets/pascal_voc.py`
-            xmin += 1
-            ymin += 1
-            _predictions[cls].append(
-                f"{image_id} {score:.3f} {xmin:.1f} {ymin:.1f} {xmax:.1f} {ymax:.1f}"
-            )
+if __name__=="__main__":
+    process()
