@@ -361,7 +361,31 @@ def nms(dets, scores, thresh):
 
     return keep
 
-def show_image(image,bbox,score,target_box,target_score):
+def show_image(image,bbox,score,target_box,target_score,pred_class,target_class):
+    CLASSES = (
+        "__background__ ",
+        "aeroplane",
+        "bicycle",
+        "bird",
+        "boat",
+        "bottle",
+        "bus",
+        "car",
+        "cat",
+        "chair",
+        "cow",
+        "diningtable",
+        "dog",
+        "horse",
+        "motorbike",
+        "person",
+        "pottedplant",
+        "sheep",
+        "sofa",
+        "train",
+        "tvmonitor",
+    )
+
     #PILImage ->to_tensor->torch->ToPilImage->cvimage
     import torchvision
     transforms=torchvision.transforms
@@ -393,19 +417,25 @@ def show_image(image,bbox,score,target_box,target_score):
     target_bbox=target_bbox[0]
 
     pred_bbox=pred_bbox[pred_score_mask,0,:]
+    pred_class=pred_class[pred_score_mask,0,:]
+    class_id=pred_class.argmax(axis=1)
     keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.3)
     for idx in keep:
         pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))
         pt2=(int(pred_bbox[idx,2]),int(pred_bbox[idx,3]))
         cv2.rectangle(imageshow,pt1,pt2,(0,255,0))
+        cv2.putText(imageshow,str(CLASSES[int(class_id[idx])]),pt1,2,1,(255,0,0))
 
 
     target_bbox=target_bbox[target_score_mask,0,:]
+    target_class=target_class[target_score_mask,0,:]
+    target_class_id=target_class.argmax(axis=1)
     keep=nms(target_bbox,target_score_np[target_score_mask,0,0],0.7)
     for idx in keep:
         pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
         pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
         cv2.rectangle(imageshow,pt1,pt2,(255,0,0))
+        cv2.putText(imageshow, str(CLASSES[int(target_class_id[idx])]), pt1, 2, 1, (255, 0, 0))
         center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
         cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
         cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
@@ -562,7 +592,7 @@ def train():
         writer.add_scalar("lobj", pt_loss * 5, idx)
         writer.add_scalar("lbox", bbox_loss, idx)
         if(idx%5==0):
-            imageshow=show_image(images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0])
+            imageshow=show_image(images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0],prob_pred[0],_classes[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
             writer.add_image("score", iou_pred[0].view(1, W, H), idx)
             writer.add_image("target_score", _ious[0].view(1, W, H), idx)
