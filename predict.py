@@ -11,7 +11,7 @@ import numpy as np
 root_path="/home/tan/e_work/datasets/VOC/VOC2012/JPEGImages"
 lines=os.listdir(root_path)
 net=SfsVps(cfg=None)
-net = torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights/iter_8400.pth")
+net = torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights_pretrain/iter_86000.pth")
 # net.load_state_dict(state_dict)
 net.eval()
 

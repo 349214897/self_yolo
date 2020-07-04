@@ -81,6 +81,8 @@ class PascalVOCDataset(torch.utils.data.Dataset):
         target = BoxList(anno["boxes"], (width, height), mode="xyxy")
         target.add_field("labels", anno["labels"])
         target.add_field("difficult", anno["difficult"])
+        target.add_field("image_id", torch.tensor([index]*len(anno["boxes"])))
+        print("dataset img_id",img_id)
         return target
 
     def _preprocess_annotation(self, target):

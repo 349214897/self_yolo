@@ -380,7 +380,7 @@ def show_image(image,bbox,score,target_box,target_score):
     pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
     target_bbox_np = np.expand_dims(target_bbox_np,0)
 
-    pred_score_mask=pred_score_np[:,0,0]>0.3
+    pred_score_mask=pred_score_np[:,0,0]>0.6
     pred_bbox=no_anchor_to_bbox(pred_bbox_np,H,W)
     pred_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     pred_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
@@ -393,7 +393,7 @@ def show_image(image,bbox,score,target_box,target_score):
     target_bbox=target_bbox[0]
 
     pred_bbox=pred_bbox[pred_score_mask,0,:]
-    keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.7)
+    keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.3)
     for idx in keep:
         pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))
         pt2=(int(pred_bbox[idx,2]),int(pred_bbox[idx,3]))

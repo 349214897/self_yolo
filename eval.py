@@ -9,8 +9,18 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import xml.etree.ElementTree as ET
+import os
+import main_voc
+import cv2
+from backbone import trcnet
 
+_dirname="/home/tan/e_work/datasets/VOC/VOC2007"
+_split="val"
+_is_2007= True
+_show =True
 _predictions = defaultdict(list)
+_anno_file_template=os.path.join(_dirname, "Annotations", "{}.xml")
+_image_set_path=os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
 
 def parse_rec(filename):
     """Parse a PASCAL VOC xml file."""
@@ -180,27 +190,44 @@ def voc_eval(detpath, annopath, imagesetfile, classname, ovthresh=0.5, use_07_me
 
     return rec, prec, ap
 
+def read_image_and_target(root_dir,split):
+    import os
+    _annopath = os.path.join(root_dir, "Annotations", "%s.xml")
+    _imgpath = os.path.join(root_dir, "JPEGImages", "%s.jpg")
+    _imgsetpath = os.path.join(root_dir, "ImageSets", "Main", "%s.txt")
+    image_set = split
+
+    with open(_imgsetpath % image_set) as f:
+        ids = f.readlines()
+    ids = [x.strip("\n") for x in ids]
+    id_to_img_map = {k: v for k, v in enumerate(ids)}
+    cls = voc.CLASSES
+    class_to_ind = dict(zip(cls, range(len(cls))))
+    categories = dict(zip(range(len(cls)), cls))
+
+
 def process():
-    net=SfsVps(cfg=None)
+    net=trcnet.trcnet50()
     net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights_pretrain/iter_86000.pth")
     W,H=14,14
     IW,IH=448,448
     device = torch.device("cuda")
     net.to(device)
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
+    dataset= voc.PascalVOCDataset(_dirname, _split,transforms=transforms)
+    g_target_ids=dataset.ids
     sample=torch.utils.data.RandomSampler(dataset)
-    batch_size=8
+    batch_size=1
     start_iter=0
     max_iter=100000
-    batch_sample=torch.utils.data.BatchSampler(sample,batch_size,False)
-    batch_sample=IterationBasedBatchSampler(batch_sample,max_iter,start_iter=start_iter)
-    data_loader = torch.utils.data.DataLoader(dataset, collate_fn=BatchCollator(), batch_sampler=batch_sample,
-                                              num_workers=4)
+    # batch_sample=torch.utils.data.BatchSampler(sample,batch_size,False)
+    # batch_sample=IterationBasedBatchSampler(batch_sample,max_iter,start_iter=start_iter)
+    data_loader = torch.utils.data.DataLoader(dataset, collate_fn=BatchCollator(), batch_size=batch_size,
+                                              num_workers=1)
     net.eval()  # start learning BN
 
     with torch.no_grad():
-        for idx, (images, targets, _) in enumerate(data_loader, 0):
+        for idx, (images, targets, data_ids) in enumerate(data_loader,0):
             output = net(torch.stack(images).cuda())
             bsize, _, h, w = output.size()
             output = output.permute(0, 2, 3, 1).contiguous().view(bsize, -1, 1, 26)
@@ -213,6 +240,11 @@ def process():
             bbox_pred_np = bbox_pred.data.cpu().numpy()
             iou_pred_np = iou_pred.data.cpu().numpy()
 
+            _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = main_voc.build_target(bbox_pred_np, iou_pred_np,
+                                                                                      targets)
+            _boxes = main_voc.np_to_variable(_boxes)
+            _ious = main_voc.np_to_variable(_ious)
+
             bbox_np = no_anchor_to_bbox(
                 np.ascontiguousarray(bbox_pred_np, dtype=np.float),
                 H, W)
@@ -220,36 +252,44 @@ def process():
 
             bbox_np[:, :, :, 0::2] *= float(IW)  # rescale x
             bbox_np[:, :, :, 1::2] *= float(IH)  # rescale y
+
             scores = iou_pred.cpu().numpy()
             cats = prob_pred.cpu().numpy()
-            mask=scores>0.6
-            bbox_np=bbox_np[mask[:,:,:,0],:]
-            cats_np=cats[mask[:,:,:,0],:]
-            scores_np=scores[mask]
             for b in range(bsize):
                 bbox_bs=bbox_np[b]
-                cat_bs=cats_np[b]
-                score_bs=scores[b]
-                ids=cat_bs.argmax(axis=0)
+                cat_bs=cats[b]
+                score_bs=scores[b].reshape(scores[b].shape[0])
+
+                # if(_show):
+                #     image=main_voc.show_image(images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b])
+                #     cv2.imshow("image",image)
+                #     cv2.waitKey(0)
+
+                mask=score_bs>0.6
+                bbox_bs=bbox_bs[mask]
+                score_bs=score_bs[mask]
+                cat_bs=cat_bs[mask]
+                bbox_bs=bbox_bs[:,0,:]
+                keep=main_voc.nms(bbox_bs,score_bs,0.3)
+                bbox_bs=bbox_bs[keep]
+                score_bs=score_bs[keep]
+                cat_bs=cat_bs[keep]
+                cls=cat_bs.argmax(axis=2)
+                image_id=g_target_ids[data_ids[b]]
                 for e in range(len(bbox_bs)):
-                    print(e)
-                    _predictions[id].append(
-                        "{0} {score:%.3f} {xmin:%.1f} {ymin:%.1f} {xmax:%.1f} {ymax:%.1f}"%(score_bs[e],0,0,0,0)
+                    s="%s %.3f %.1f %.1f %.1f %.1f"%(image_id,score_bs[e],bbox_bs[e,0],bbox_bs[e,1],bbox_bs[e,2],bbox_bs[e,3])
+                    # print(s," ",cls[e,0])
+                    _predictions[cls[e,0]].append(
+                        s
                     )
+
     import pickle
     buffer = pickle.dumps(_predictions)
     if len(buffer) > 1024 ** 3:
         print(
             "Rank {} trying to all-gather {:.2f} GB of data on device {}"
         )
-    storage = torch.ByteStorage.from_buffer(buffer)
-    tensor = torch.ByteTensor(storage).to(device=device)
-    all_predictions= tensor
-    predictions = defaultdict(list)
-    for predictions_per_rank in all_predictions:
-        for clsid, lines in predictions_per_rank.items():
-            predictions[clsid].extend(lines)
-    del all_predictions
+    predictions = _predictions.copy()
 
     import tempfile
     import os
@@ -267,11 +307,11 @@ def process():
             for thresh in range(50, 100, 5):
                 rec, prec, ap = voc_eval(
                     res_file_template,
-                    self._anno_file_template,
-                    self._image_set_path,
+                    _anno_file_template,
+                    _image_set_path,
                     cls_name,
                     ovthresh=thresh / 100.0,
-                    use_07_metric=self._is_2007,
+                    use_07_metric=_is_2007,
                 )
                 aps[thresh].append(ap * 100)
 
