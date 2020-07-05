@@ -361,7 +361,7 @@ def nms(dets, scores, thresh):
 
     return keep
 
-def show_image(image,bbox,score,target_box,target_score,pred_class,target_class):
+def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,only_pred=False):
     CLASSES = (
         "__background__ ",
         "aeroplane",
@@ -385,6 +385,10 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class)
         "train",
         "tvmonitor",
     )
+    colors=[(25,25,125),(50,25,125),(25,25,150),(25,50,125),(50,50,150),(50,75,150)
+        ,(75,50,150),(50,50,175),(75,75,175),(100,75,175),(75,100,175),(75,175,100),
+        (125,100,200),(125,100,200),(200,25,200),(200,100,125),(125,125,225),(150,125,225),
+         (225,150,225),(125,125,150),(150,150,250)]
 
     #PILImage ->to_tensor->torch->ToPilImage->cvimage
     import torchvision
@@ -420,28 +424,32 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class)
     pred_class=pred_class[pred_score_mask,0,:]
     class_id=pred_class.argmax(axis=1)
     keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.3)
+    devide=[1.0]*21
     for idx in keep:
         pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))
         pt2=(int(pred_bbox[idx,2]),int(pred_bbox[idx,3]))
-        cv2.rectangle(imageshow,pt1,pt2,(0,255,0))
+        color=colors[int(class_id[idx])]
+        color=(color[0]/devide[int(class_id[idx])],color[1] / devide[int(class_id[idx])],color[2] / devide[int(class_id[idx])])
+        cv2.rectangle(imageshow,pt1,pt2,color,2)
         cv2.putText(imageshow,str(CLASSES[int(class_id[idx])]),pt1,2,1,(255,0,0))
+        devide[int(class_id[idx])]=devide[int(class_id[idx])]+1
 
-
-    target_bbox=target_bbox[target_score_mask,0,:]
-    target_class=target_class[target_score_mask,0,:]
-    target_class_id=target_class.argmax(axis=1)
-    keep=nms(target_bbox,target_score_np[target_score_mask,0,0],0.7)
-    for idx in keep:
-        pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
-        pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
-        cv2.rectangle(imageshow,pt1,pt2,(255,0,0))
-        cv2.putText(imageshow, str(CLASSES[int(target_class_id[idx])]), pt1, 2, 1, (255, 0, 0))
-        center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
-        cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
-        cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
-        lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
-        rb = lt[0] + 32, lt[1] + 32
-        cv2.rectangle(imageshow, lt, rb, (0, 255, 255), 3)
+    if(only_pred==False):
+        target_bbox=target_bbox[target_score_mask,0,:]
+        target_class=target_class[target_score_mask,0,:]
+        target_class_id=target_class.argmax(axis=1)
+        keep=nms(target_bbox,target_score_np[target_score_mask,0,0],0.7)
+        for idx in keep:
+            pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
+            pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
+            cv2.rectangle(imageshow,pt1,pt2,(255,0,0),2)
+            cv2.putText(imageshow, str(CLASSES[int(target_class_id[idx])]), pt1, 2, 1, (255, 0, 0))
+            # center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
+            # cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
+            # cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
+            # lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
+            # rb = lt[0] + 32, lt[1] + 32
+            # cv2.rectangle(imageshow, lt, rb, (0, 255, 255), 3)
 
     # for e in target.bbox:
     #     cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))

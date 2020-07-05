@@ -17,7 +17,7 @@ from backbone import trcnet
 _dirname="/home/tan/e_work/datasets/VOC/VOC2007"
 _split="val"
 _is_2007= True
-_show =False
+_show =True
 _predictions = defaultdict(list)
 _anno_file_template=os.path.join(_dirname, "Annotations", "{}.xml")
 _image_set_path=os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
@@ -261,7 +261,7 @@ def process():
                 score_bs=scores[b].reshape(scores[b].shape[0])
 
                 if(_show):
-                    image=main_voc.show_image(images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b])
+                    image=main_voc.show_image(images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],True)
                     cv2.imshow("image",image)
                     cv2.waitKey(0)
 
