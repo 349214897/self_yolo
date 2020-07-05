@@ -17,10 +17,11 @@ from backbone import trcnet
 _dirname="/home/tan/e_work/datasets/VOC/VOC2007"
 _split="val"
 _is_2007= True
-_show =True
+_show =False
 _predictions = defaultdict(list)
 _anno_file_template=os.path.join(_dirname, "Annotations", "{}.xml")
 _image_set_path=os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
+_save_path="/home/tan/e_work/result/%s.jpg"
 
 def parse_rec(filename):
     """Parse a PASCAL VOC xml file."""
@@ -208,8 +209,8 @@ def read_image_and_target(root_dir,split):
 
 def process():
     net=trcnet.trcnet50()
-    net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights_pretrain/iter_86000.pth")
-    W,H=14,14
+    net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights/iter_12000.pth")
+    W,H=28,28
     IW,IH=448,448
     device = torch.device("cuda")
     net.to(device)
@@ -259,23 +260,27 @@ def process():
                 bbox_bs=bbox_np[b]
                 cat_bs=cats[b]
                 score_bs=scores[b].reshape(scores[b].shape[0])
+                image_id=g_target_ids[data_ids[b]]
 
                 if(_show):
                     image=main_voc.show_image(images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],True)
                     cv2.imshow("image",image)
                     cv2.waitKey(0)
+                else:
+                    image = main_voc.show_image(images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
+                                                _classes[b], True)
+                    cv2.imwrite(_save_path%(image_id),image)
 
-                mask=score_bs>0.8
+                mask=score_bs>0.9
                 bbox_bs=bbox_bs[mask]
                 score_bs=score_bs[mask]
                 cat_bs=cat_bs[mask]
                 bbox_bs=bbox_bs[:,0,:]
-                keep=main_voc.nms(bbox_bs,score_bs,0.3)
+                keep=main_voc.nms(bbox_bs,score_bs,0.5)
                 bbox_bs=bbox_bs[keep]
                 score_bs=score_bs[keep]
                 cat_bs=cat_bs[keep]
                 cls=cat_bs.argmax(axis=2)
-                image_id=g_target_ids[data_ids[b]]
                 for e in range(len(bbox_bs)):
                     s="%s %.3f %.1f %.1f %.1f %.1f"%(image_id,score_bs[e],bbox_bs[e,0],bbox_bs[e,1],bbox_bs[e,2],bbox_bs[e,3])
                     # print(s," ",cls[e,0])

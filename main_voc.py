@@ -134,10 +134,10 @@ def no_anchor_to_bbox(bbox_pred,H,W):
 def build_target(bbox_pred_np,iou_pred_np,targets):
     bsize = bbox_pred_np.shape[0]
 
-    H,W=14,14
+    H,W=28,28
     inp_size=[448,448]
-    out_size=[14,14]
-    anchors=np.array([[14,14]])
+    out_size=[28,28]
+    anchors=np.array([[28,28]])
     num_classes=21
     coord_scale=1.0
     class_scale=1.0
@@ -213,7 +213,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
         neg_pt_num=W*H-pos_pt_num
         neg_pt_score=float(3*pos_pt_num)/float(neg_pt_num)
         # _iou_mask[b,best_ious <= iou_thresh] = noobject_scale*neg_pt_score
-        _iou_mask[b, best_ious <= iou_thresh] = noobject_scale*0.02
+        _iou_mask[b, best_ious <= iou_thresh] = noobject_scale*0.001
         for i, cell_ind in enumerate(cell_inds):
             if cell_ind >= hw or cell_ind < 0:
                 print('cell inds size {}'.format(len(cell_inds)))
@@ -247,7 +247,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
                         continue
                     #use mask to ignore compute loss
                     _iou_mask[b, tmp_ind, a, :] = 0
-
+            rad=0
             for m in range(-rad,rad+1):
                 for n in range(-rad,rad+1):
                     if(h_ind+m<0 or h_ind+m>=H):
@@ -401,8 +401,7 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,
     target_bbox_np=target_box.cpu().numpy()
     target_score_np=target_score.cpu().numpy()
 
-    anchors=np.array([[14,14]])
-    H,W=14,14
+    H,W=28,28
     O_H,O_W =448,448
 
     pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
@@ -422,6 +421,9 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,
 
     pred_bbox=pred_bbox[pred_score_mask,0,:]
     pred_class=pred_class[pred_score_mask,0,:]
+    if(pred_class.shape[0]==0):
+        print("!!!!!!!!!!!!!!!!!!!!no predict!!!!")
+        return imageshow
     class_id=pred_class.argmax(axis=1)
     keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.3)
     devide=[1.0]*21
@@ -521,20 +523,20 @@ def train():
     net.to(device)
 
     # create your optimizer
-    optimizer = optim.SGD(net.parameters(), lr=0.01)
+    optimizer = optim.SGD(net.parameters(), lr=0.001)
     # in your training loop:
     optimizer.zero_grad()  # zero the gradient buffers
     from tensorboardX import SummaryWriter
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
     batch_size=16
     start_iter=0
     max_iter=100000
-    W,H=14,14
+    W,H=28,28
     batch_sample=torch.utils.data.BatchSampler(sample,batch_size,False)
     batch_sample=IterationBasedBatchSampler(batch_sample,max_iter,start_iter=start_iter)
 
