@@ -134,10 +134,10 @@ def no_anchor_to_bbox(bbox_pred,H,W):
 def build_target(bbox_pred_np,iou_pred_np,targets):
     bsize = bbox_pred_np.shape[0]
 
-    H,W=28,28
+    H,W=14,14
     inp_size=[448,448]
-    out_size=[28,28]
-    anchors=np.array([[28,28]])
+    out_size=[14,14]
+    anchors=np.array([[14,14]])
     num_classes=21
     coord_scale=1.0
     class_scale=1.0
@@ -213,7 +213,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
         neg_pt_num=W*H-pos_pt_num
         neg_pt_score=float(3*pos_pt_num)/float(neg_pt_num)
         # _iou_mask[b,best_ious <= iou_thresh] = noobject_scale*neg_pt_score
-        _iou_mask[b, best_ious <= iou_thresh] = noobject_scale*0.001
+        _iou_mask[b, best_ious <= iou_thresh] = noobject_scale*0.01
         for i, cell_ind in enumerate(cell_inds):
             if cell_ind >= hw or cell_ind < 0:
                 print('cell inds size {}'.format(len(cell_inds)))
@@ -229,7 +229,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
             h_ind=cell_ind/W
             w_ind=cell_ind%W
 
-            pos_range=0.3
+            pos_range=0.2
             ignore_range=0.7
             rad = int(torch.sqrt(box_w[i]*box_w[i]+box_h[i]*box_h[i])*pos_range/2)
             if(rad<1):
@@ -247,7 +247,7 @@ def build_target(bbox_pred_np,iou_pred_np,targets):
                         continue
                     #use mask to ignore compute loss
                     _iou_mask[b, tmp_ind, a, :] = 0
-            rad=0
+            # rad=0
             for m in range(-rad,rad+1):
                 for n in range(-rad,rad+1):
                     if(h_ind+m<0 or h_ind+m>=H):
@@ -584,8 +584,8 @@ def train():
         # _boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
         # box_mask = box_mask.expand_as(_boxes)
 
-        # bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
-        bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)/num_boxes
+        bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+        # bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)/num_boxes
         # pt_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
         #focalloss
         pt_loss = focal_loss(iou_pred,_ious,iou_mask)/num_boxes

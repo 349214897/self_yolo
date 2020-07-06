@@ -22,6 +22,9 @@ _predictions = defaultdict(list)
 _anno_file_template=os.path.join(_dirname, "Annotations", "{}.xml")
 _image_set_path=os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
 _save_path="/home/tan/e_work/result/%s.jpg"
+_OH,_OW=14,14
+_IW, _IH = 448, 448
+_save=False
 
 def parse_rec(filename):
     """Parse a PASCAL VOC xml file."""
@@ -115,13 +118,22 @@ def voc_eval(detpath, annopath, imagesetfile, classname, ovthresh=0.5, use_07_me
     class_recs = {}
     npos = 0
     for imagename in imagenames:
+        #read image size
+        anno = ET.parse(annopath.format(imagename)).getroot()
+        size = anno.find("size")
+        im_info = tuple(map(int, (size.find("height").text, size.find("width").text)))
+
         R = [obj for obj in recs[imagename] if obj["name"] == classname]
         bbox = np.array([x["bbox"] for x in R])
+        for e in range(bbox.shape[0]):
+            bbox[e,::2]=bbox[e,::2]/float(im_info[1])*_IW
+            bbox[e, 1::2] = bbox[e, 1::2] / float(im_info[0])*_IH
         difficult = np.array([x["difficult"] for x in R]).astype(np.bool)
         # difficult = np.array([False for x in R]).astype(np.bool)  # treat all "difficult" as GT
         det = [False] * len(R)
         npos = npos + sum(~difficult)
-        class_recs[imagename] = {"bbox": bbox, "difficult": difficult, "det": det}
+
+        class_recs[imagename] = {"bbox": bbox, "difficult": difficult, "det": det, "im_info":im_info}
 
     # read dets
     detfile = detpath.format(classname)
@@ -209,9 +221,8 @@ def read_image_and_target(root_dir,split):
 
 def process():
     net=trcnet.trcnet50()
-    net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights/iter_12000.pth")
-    W,H=28,28
-    IW,IH=448,448
+    net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights_pretrain/iter_86000.pth")
+
     device = torch.device("cuda")
     net.to(device)
     transforms = transform.Transform()
@@ -248,11 +259,11 @@ def process():
 
             bbox_np = no_anchor_to_bbox(
                 np.ascontiguousarray(bbox_pred_np, dtype=np.float),
-                H, W)
+                _OH, _OW)
             # bbox_np = (hw, num_anchors, (x1, y1, x2, y2))   range: 0 ~ 1
 
-            bbox_np[:, :, :, 0::2] *= float(IW)  # rescale x
-            bbox_np[:, :, :, 1::2] *= float(IH)  # rescale y
+            bbox_np[:, :, :, 0::2] *= float(_IW)  # rescale x
+            bbox_np[:, :, :, 1::2] *= float(_IH)  # rescale y
 
             scores = iou_pred.cpu().numpy()
             cats = prob_pred.cpu().numpy()
@@ -266,7 +277,7 @@ def process():
                     image=main_voc.show_image(images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],True)
                     cv2.imshow("image",image)
                     cv2.waitKey(0)
-                else:
+                if(_save):
                     image = main_voc.show_image(images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
                                                 _classes[b], True)
                     cv2.imwrite(_save_path%(image_id),image)
@@ -276,7 +287,7 @@ def process():
                 score_bs=score_bs[mask]
                 cat_bs=cat_bs[mask]
                 bbox_bs=bbox_bs[:,0,:]
-                keep=main_voc.nms(bbox_bs,score_bs,0.5)
+                keep=main_voc.nms(bbox_bs,score_bs,0.2)
                 bbox_bs=bbox_bs[keep]
                 score_bs=score_bs[keep]
                 cat_bs=cat_bs[keep]
@@ -287,6 +298,13 @@ def process():
                     _predictions[cls[e,0]].append(
                         s
                     )
+    #             verify target is 100% or not
+    #             for e in range(len(targets[b])):
+    #                 s="%s %.3f %.1f %.1f %.1f %.1f"%(image_id,1.0,targets[b].bbox[e][0],targets[b].bbox[e][1],targets[b].bbox[e][2],targets[b].bbox[e][3])
+    #                 # print(s," ",cls[e,0])
+    #                 _predictions[int(targets[b].extra_fields["labels"][e])].append(
+    #                     s
+    #                 )
 
     import pickle
     buffer = pickle.dumps(_predictions)
@@ -294,7 +312,7 @@ def process():
         print(
             "Rank {} trying to all-gather {:.2f} GB of data on device {}"
         )
-    predictions = _predictions.copy()
+    predictions = _predictions
 
     import tempfile
     import os
@@ -319,6 +337,7 @@ def process():
                     use_07_metric=_is_2007,
                 )
                 aps[thresh].append(ap * 100)
+        print("ok")
 
     ret = OrderedDict()
     mAP = {iou: np.mean(x) for iou, x in aps.items()}
