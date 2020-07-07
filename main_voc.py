@@ -398,10 +398,13 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,
 
     pred_bbox_np=bbox.cpu().detach().numpy()
     pred_score_np=score.cpu().detach().numpy()
+    pred_class_np = pred_class.cpu().numpy()
     target_bbox_np=target_box.cpu().numpy()
     target_score_np=target_score.cpu().numpy()
+    target_class_np = target_class
 
-    H,W=28,28
+
+    H,W=14,14
     O_H,O_W =448,448
 
     pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
@@ -420,11 +423,11 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,
     target_bbox=target_bbox[0]
 
     pred_bbox=pred_bbox[pred_score_mask,0,:]
-    pred_class=pred_class[pred_score_mask,0,:]
-    if(pred_class.shape[0]==0):
+    pred_class_np=pred_class_np[pred_score_mask,0,:]
+    if(pred_class_np.shape[0]==0):
         print("!!!!!!!!!!!!!!!!!!!!no predict!!!!")
         return imageshow
-    class_id=pred_class.argmax(axis=1)
+    class_id=pred_class_np.argmax(axis=1)
     keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.3)
     devide=[1.0]*21
     for idx in keep:
@@ -433,19 +436,19 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,
         color=colors[int(class_id[idx])]
         color=(color[0]/devide[int(class_id[idx])],color[1] / devide[int(class_id[idx])],color[2] / devide[int(class_id[idx])])
         cv2.rectangle(imageshow,pt1,pt2,color,2)
-        cv2.putText(imageshow,str(CLASSES[int(class_id[idx])]),pt1,2,1,(255,0,0))
+        cv2.putText(imageshow,str(CLASSES[int(class_id[idx])])+" "+"%.2f"%(float(pred_score_np[pred_score_mask,0,0][idx])),pt1,2,1,(0,255,0))
         devide[int(class_id[idx])]=devide[int(class_id[idx])]+1
 
     if(only_pred==False):
         target_bbox=target_bbox[target_score_mask,0,:]
-        target_class=target_class[target_score_mask,0,:]
-        target_class_id=target_class.argmax(axis=1)
+        target_class_np=target_class_np[target_score_mask,0,:]
+        target_class_id=target_class_np.argmax(axis=1)
         keep=nms(target_bbox,target_score_np[target_score_mask,0,0],0.7)
         for idx in keep:
             pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
             pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
             cv2.rectangle(imageshow,pt1,pt2,(255,0,0),2)
-            cv2.putText(imageshow, str(CLASSES[int(target_class_id[idx])]), pt1, 2, 1, (255, 0, 0))
+            cv2.putText(imageshow, str(CLASSES[int(target_class_id[idx])])+" "+"%.2f"%(float(target_score_np[target_score_mask,0,0][idx])), pt1, 2, 1, (255, 0, 0))
             # center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
             # cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
             # cv2.circle(imageshow, center, 1, (255, 0, 0), 3)

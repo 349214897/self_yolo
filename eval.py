@@ -14,17 +14,17 @@ import main_voc
 import cv2
 from backbone import trcnet
 
-_dirname="/home/tan/e_work/datasets/VOC/VOC2007"
-_split="val"
+_dirname="/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2007"
+_split="val_small"
 _is_2007= True
 _show =False
 _predictions = defaultdict(list)
 _anno_file_template=os.path.join(_dirname, "Annotations", "{}.xml")
 _image_set_path=os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
-_save_path="/home/tan/e_work/result/%s.jpg"
+_save_path="/home/tan/docker_workspace/self_yolo/result/%s.jpg"
 _OH,_OW=14,14
 _IW, _IH = 448, 448
-_save=False
+_save=True
 
 def parse_rec(filename):
     """Parse a PASCAL VOC xml file."""
@@ -221,7 +221,7 @@ def read_image_and_target(root_dir,split):
 
 def process():
     net=trcnet.trcnet50()
-    net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_2/weights_pretrain/iter_86000.pth")
+    net=torch.load("/home/tan/docker_workspace/self_yolo/weights/iter_86000.pth")
 
     device = torch.device("cuda")
     net.to(device)
@@ -281,6 +281,10 @@ def process():
                     image = main_voc.show_image(images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
                                                 _classes[b], True)
                     cv2.imwrite(_save_path%(image_id),image)
+                    image_score = np.array(iou_pred[0].view(1, _OW, _OH).cpu())*255
+                    image_score=np.transpose(image_score, (1, 2, 0))
+                    image_score =cv2.resize(image_score,(_IW,_IH))
+                    cv2.imwrite(_save_path%(image_id+"_score"),image_score)
 
                 mask=score_bs>0.9
                 bbox_bs=bbox_bs[mask]
