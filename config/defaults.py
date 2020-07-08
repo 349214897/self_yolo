@@ -52,6 +52,12 @@ _C.INPUT.VERTICAL_FLIP_PROB_TRAIN = 0.0
 #MODEL
 _C.MODEL = CN()
 _C.MODEL.ARCH = "trcnet"
+_C.MODEL.PATH= "/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_3400.pth"
+
+#DATASET
+_C.DATASET = CN()
+_C.DATASET.PATH = "/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012"
+_C.DATASET.SPLIT = "trainval"
 
 #SOLVER
 _C.SOLVER = CN()
@@ -61,6 +67,9 @@ _C.OUT_SIZE = (28,28)
 _C.IN_SIZE = [448,448]
 _C.ANCHORS=[[28,28]]
 _C.CLASS_NUM=21
+_C.LR=0.01
+_C.SAVE_PERIOD = 500
+_C.SHOW_PERIOD = 5
 
 #scale
 _C.COORD_SCALE =1.0
@@ -72,7 +81,6 @@ _C.SAMPLE_IOU_THRESH =0.5
 _C.STATE = "train"
 #eval
 _C.EVAL = CN()
-_C.EVAL.MODEL_PATH= "/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_3400.pth"
 _C.EVAL.SAVE_PATH="/home/tan/docker_workspace/self_yolo/result/%s.jpg"
 
 

@@ -250,7 +250,6 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
                         continue
                     #use mask to ignore compute loss
                     _iou_mask[b, tmp_ind, a, :] = 0
-            # rad=0
             for m in range(-rad,rad+1):
                 for n in range(-rad,rad+1):
                     if(h_ind+m<0 or h_ind+m>=H):
@@ -533,7 +532,7 @@ def train(cfg):
     net=load_model(cfg)
 
     # create your optimizer
-    optimizer = optim.SGD(net.parameters(), lr=0.001)
+    optimizer = optim.SGD(net.parameters(), lr=cfg.LR)
     # in your training loop:
     optimizer.zero_grad()  # zero the gradient buffers
     from tensorboardX import SummaryWriter
@@ -541,7 +540,7 @@ def train(cfg):
 
     # transforms = transform.Transform()
     transforms=build_transforms(cfg,True)
-    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
+    dataset= voc.PascalVOCDataset(cfg.DATASET.PATH, cfg.DATASET.SPLIT,transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
     batch_size=cfg.BATCH
@@ -612,12 +611,12 @@ def train(cfg):
         writer.add_scalar("lcls", cls_loss, idx)
         writer.add_scalar("lobj", pt_loss * 5, idx)
         writer.add_scalar("lbox", bbox_loss, idx)
-        if(idx%5==0):
+        if(idx%cfg.SHOW_PERIOD==0):
             imageshow=show_image(cfg,images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0],prob_pred[0],_classes[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
             writer.add_image("score", iou_pred[0].view(1, W, H), idx)
             writer.add_image("target_score", _ious[0].view(1, W, H), idx)
-        if(idx%200==0):
+        if(idx%cfg.SAVE_PERIOD==0):
             torch.save(net, "weights/iter_%d.pth" % (idx))
 
         optimizer.zero_grad()

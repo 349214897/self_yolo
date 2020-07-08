@@ -8,6 +8,7 @@ import torch
 def load_model(cfg):
     mode=cfg.STATE
     arch=cfg.MODEL.ARCH
+    model_path=cfg.MODEL.PATH
     if(mode=="train"):
         if(arch=="trcnet"):
             net = trcnet.trcnet50()
@@ -37,11 +38,11 @@ def load_model(cfg):
             net.to(device)
     if(mode=="test"):
         net = trcnet.trcnet50()
-        net = torch.load(cfg.EVAL.MODEL_PATH)
+        net = torch.load(cfg.MODEL.PATH)
 
         device = torch.device("cuda")
         net.to(device)
     if(mode=="predict"):
         net = SfsVps(cfg=None)
-        net = torch.load(cfg.EVAL.MODEL_PATH)
+        net = torch.load(cfg.MODEL.PATH)
     return net
