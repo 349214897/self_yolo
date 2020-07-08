@@ -17,6 +17,11 @@ from torchvision import models
 
 import torch.nn.functional as F
 
+from config import cfg
+import argparse
+import os
+
+
 def cal_iou(box1,box2):
     # box2 = box2.t()
 
@@ -134,10 +139,10 @@ def no_anchor_to_bbox(bbox_pred,H,W):
 def build_target(bbox_pred_np,iou_pred_np,targets):
     bsize = bbox_pred_np.shape[0]
 
-    H,W=14,14
+    H,W=28,28
     inp_size=[448,448]
-    out_size=[14,14]
-    anchors=np.array([[14,14]])
+    out_size=[28,28]
+    anchors=np.array([[28,28]])
     num_classes=21
     coord_scale=1.0
     class_scale=1.0
@@ -499,7 +504,7 @@ def focal_loss(pred_score,target_score,mask):
     loss_negtive = -1.0*(1.0-alpha)*(target_score-eps<0.0).float()*mask*lognpt*pred_score**gamma
     return (loss_negtive+loss_positive).sum()
 
-def train():
+def train(cfg):
     # parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
     # parser.add_argument(
     #     "--",
@@ -587,8 +592,8 @@ def train():
         # _boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
         # box_mask = box_mask.expand_as(_boxes)
 
-        bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
-        # bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)/num_boxes
+        # bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+        bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)/num_boxes
         # pt_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
         #focalloss
         pt_loss = focal_loss(iou_pred,_ious,iou_mask)/num_boxes
@@ -621,7 +626,34 @@ def train():
     return
 
 if __name__=="__main__":
-    train()
+    parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
+    parser.add_argument(
+        "--config-file",
+        default="",
+        metavar="FILE",
+        help="path to config file",
+        type=str,
+    )
+    parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument(
+        "--skip-test",
+        dest="skip_test",
+        help="Do not test the final model",
+        action="store_true",
+    )
+    parser.add_argument(
+        "opts",
+        help="Modify config options using the command-line",
+        default=None,
+        nargs=argparse.REMAINDER,
+    )
+
+    args = parser.parse_args()
+    cfg.merge_from_file(args.config_file)
+    cfg.merge_from_list(args.opts)
+    cfg.freeze()
+
+    train(cfg)
 
     #1.view,transpose,reshape,permute
     # a=torch.randn(2,3,4)

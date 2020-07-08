@@ -14,6 +14,7 @@ import main_voc
 import cv2
 from backbone import trcnet
 
+
 _dirname="/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2007"
 _split="val_small"
 _is_2007= True
@@ -22,7 +23,7 @@ _predictions = defaultdict(list)
 _anno_file_template=os.path.join(_dirname, "Annotations", "{}.xml")
 _image_set_path=os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
 _save_path="/home/tan/docker_workspace/self_yolo/result/%s.jpg"
-_OH,_OW=14,14
+_OH,_OW=28,28
 _IW, _IH = 448, 448
 _save=True
 
@@ -221,7 +222,7 @@ def read_image_and_target(root_dir,split):
 
 def process():
     net=trcnet.trcnet50()
-    net=torch.load("/home/tan/docker_workspace/self_yolo/weights/iter_86000.pth")
+    net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_3400.pth")
 
     device = torch.device("cuda")
     net.to(device)
@@ -286,12 +287,25 @@ def process():
                     image_score =cv2.resize(image_score,(_IW,_IH))
                     cv2.imwrite(_save_path%(image_id+"_score"),image_score)
 
-                mask=score_bs>0.9
+                mask=score_bs>0.7
                 bbox_bs=bbox_bs[mask]
                 score_bs=score_bs[mask]
                 cat_bs=cat_bs[mask]
                 bbox_bs=bbox_bs[:,0,:]
-                keep=main_voc.nms(bbox_bs,score_bs,0.2)
+                # base cat nums
+                class_inds = cat_bs.argmax(axis=2)
+
+                keep = np.zeros(len(bbox_bs), dtype=np.int)
+                for i in range(21):
+                    class_i = np.where(class_inds == i)[0]
+                    if len(class_i) == 0:
+                        continue
+                    bbox_bs_i=bbox_bs[class_i]
+                    score_bs_i=score_bs[class_i]
+                    keep_i=main_voc.nms(bbox_bs_i,score_bs_i,0.3)
+                    keep[class_i[keep_i]]=1
+                keep= np.where(keep>0)
+                # keep=main_voc.nms(bbox_bs,score_bs,0.2)
                 bbox_bs=bbox_bs[keep]
                 score_bs=score_bs[keep]
                 cat_bs=cat_bs[keep]
