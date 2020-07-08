@@ -1,0 +1,7 @@
+OUT_SIZE: (14,14)
+STATE: "test"
+MODEL:
+    ARCH: "trcnet14"
+EVAL:
+    MODEL_PATH: "/home/tan/docker_workspace/self_yolo/weights/iter_9400.pth"
+#    SAVE_PATH: ""

@@ -20,6 +20,7 @@ import torch.nn.functional as F
 from config import cfg
 import argparse
 import os
+from load_model import load_model
 
 
 def cal_iou(box1,box2):
@@ -136,19 +137,19 @@ def no_anchor_to_bbox(bbox_pred,H,W):
                         bbox_out[b, ind, a, 3] = 1
     return bbox_out
 
-def build_target(bbox_pred_np,iou_pred_np,targets):
+def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
     bsize = bbox_pred_np.shape[0]
 
-    H,W=28,28
-    inp_size=[448,448]
-    out_size=[28,28]
-    anchors=np.array([[28,28]])
-    num_classes=21
-    coord_scale=1.0
-    class_scale=1.0
-    object_scale=1.0
-    noobject_scale = 1.0
-    iou_thresh = 0.5
+    H,W=cfg.OUT_SIZE
+    inp_size=cfg.IN_SIZE
+    out_size=cfg.OUT_SIZE
+    anchors=np.array(cfg.ANCHORS)
+    num_classes=cfg.CLASS_NUM
+    coord_scale=cfg.COORD_SCALE
+    class_scale=cfg.CLASS_SCALE
+    object_scale=cfg.OBJECT_SCALE
+    noobject_scale = cfg.NOOBJECT_SCALE
+    iou_thresh = cfg.SAMPLE_IOU_THRESH
 
 
     hw,num_anchors,_=bbox_pred_np[bsize-1].shape
@@ -366,7 +367,7 @@ def nms(dets, scores, thresh):
 
     return keep
 
-def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,only_pred=False):
+def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_class,only_pred=False):
     CLASSES = (
         "__background__ ",
         "aeroplane",
@@ -406,11 +407,14 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,
     pred_class_np = pred_class.cpu().detach().numpy()
     target_bbox_np=target_box.cpu().numpy()
     target_score_np=target_score.cpu().numpy()
-    target_class_np = target_class.cpu().detach().numpy()
+    if(cfg.STATE=="test"):
+        target_class_np=target_class
+    if(cfg.STATE=="train"):
+        target_class_np = target_class.cpu().detach().numpy()
 
 
-    H,W=14,14
-    O_H,O_W =448,448
+    H,W=cfg.OUT_SIZE
+    O_H,O_W =cfg.IN_SIZE
 
     pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
     target_bbox_np = np.expand_dims(target_bbox_np,0)
@@ -517,18 +521,19 @@ def train(cfg):
 
     # net=Yolo(cfg=None)
     # net=SfsVps(cfg=None)
-    net =trcnet.trcnet50()
-    # load pretrain resnet50
-    model_dict=net.state_dict()
-    res_net=models.resnet50(pretrained=True)
-    pretrained_dict=res_net.state_dict()
-    pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-    model_dict.update(pretrained_dict)
-    net.load_state_dict(model_dict)
-
-    # net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou/weights/iter_200.pth")
-    device = torch.device("cuda")
-    net.to(device)
+    # net =trcnet.trcnet50()
+    # # load pretrain resnet50
+    # model_dict=net.state_dict()
+    # res_net=models.resnet50(pretrained=True)
+    # pretrained_dict=res_net.state_dict()
+    # pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
+    # model_dict.update(pretrained_dict)
+    # net.load_state_dict(model_dict)
+    #
+    # # net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou/weights/iter_200.pth")
+    # device = torch.device("cuda")
+    # net.to(device)
+    net=load_model(cfg,"train")
 
     # create your optimizer
     optimizer = optim.SGD(net.parameters(), lr=0.001)
@@ -541,10 +546,10 @@ def train(cfg):
     dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
-    batch_size=16
+    batch_size=cfg.BATCH
     start_iter=0
-    max_iter=100000
-    W,H=28,28
+    max_iter=cfg.MAXITER
+    W,H=cfg.OUT_SIZE
     batch_sample=torch.utils.data.BatchSampler(sample,batch_size,False)
     batch_sample=IterationBasedBatchSampler(batch_sample,max_iter,start_iter=start_iter)
 
@@ -576,7 +581,7 @@ def train(cfg):
 
         bbox_pred_np = bbox_pred.data.cpu().numpy()
         iou_pred_np = iou_pred.data.cpu().numpy()
-        _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask=build_target(bbox_pred_np,iou_pred_np,targets)
+        _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask=build_target(cfg,bbox_pred_np,iou_pred_np,targets)
         _boxes = np_to_variable(_boxes)
         _ious = np_to_variable(_ious)
         _classes = np_to_variable(_classes)
@@ -610,7 +615,7 @@ def train(cfg):
         writer.add_scalar("lobj", pt_loss * 5, idx)
         writer.add_scalar("lbox", bbox_loss, idx)
         if(idx%5==0):
-            imageshow=show_image(images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0],prob_pred[0],_classes[0])
+            imageshow=show_image(cfg,images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0],prob_pred[0],_classes[0])
             writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
             writer.add_image("score", iou_pred[0].view(1, W, H), idx)
             writer.add_image("target_score", _ious[0].view(1, W, H), idx)
@@ -628,7 +633,7 @@ def train(cfg):
 if __name__=="__main__":
     parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
     parser.add_argument(
-        "--config-file",
+        "--config_file",
         default="",
         metavar="FILE",
         help="path to config file",
@@ -650,7 +655,7 @@ if __name__=="__main__":
 
     args = parser.parse_args()
     cfg.merge_from_file(args.config_file)
-    cfg.merge_from_list(args.opts)
+    # cfg.merge_from_list(args.opts)
     cfg.freeze()
 
     train(cfg)

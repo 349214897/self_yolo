@@ -39,6 +39,36 @@ _C.INPUT.PIXEL_STD = [1., 1., 1.]
 # Convert image to BGR format (for Caffe2 models), in range 0-255
 _C.INPUT.TO_BGR255 = True
 
+#MODEL
+_C.MODEL = CN()
+_C.MODEL.ARCH = "trcnet"
+
+#SOLVER
+_C.SOLVER = CN()
+_C.BATCH = 16
+_C.MAXITER = 100000
+_C.OUT_SIZE = (28,28)
+_C.IN_SIZE = [448,448]
+_C.ANCHORS=[[28,28]]
+_C.CLASS_NUM=21
+
+#scale
+_C.COORD_SCALE =1.0
+_C.CLASS_SCALE =1.0
+_C.OBJECT_SCALE =1.0
+_C.NOOBJECT_SCALE =1.0
+_C.SAMPLE_IOU_THRESH =0.5
+
+_C.STATE = "train"
+#eval
+_C.EVAL = CN()
+_C.EVAL.MODEL_PATH= "/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_3400.pth"
+_C.EVAL.SAVE_PATH="/home/tan/docker_workspace/self_yolo/result/%s.jpg"
+
+
+#
+
+
 # Image ColorJitter
 _C.INPUT.BRIGHTNESS = 0.0
 _C.INPUT.CONTRAST = 0.0

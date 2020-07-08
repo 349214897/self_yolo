@@ -1,0 +1,4 @@
+OUT_SIZE: (28,28)
+STATE: "train"
+MODEL:
+    ARCH: "trcnet"

@@ -13,7 +13,10 @@ import os
 import main_voc
 import cv2
 from backbone import trcnet
-
+from config import cfg
+import argparse
+import os
+from load_model import load_model
 
 _dirname="/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2007"
 _split="val_small"
@@ -22,9 +25,6 @@ _show =False
 _predictions = defaultdict(list)
 _anno_file_template=os.path.join(_dirname, "Annotations", "{}.xml")
 _image_set_path=os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
-_save_path="/home/tan/docker_workspace/self_yolo/result/%s.jpg"
-_OH,_OW=28,28
-_IW, _IH = 448, 448
 _save=True
 
 def parse_rec(filename):
@@ -80,7 +80,7 @@ def voc_ap(rec, prec, use_07_metric=False):
         ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
     return ap
 
-def voc_eval(detpath, annopath, imagesetfile, classname, ovthresh=0.5, use_07_metric=False):
+def voc_eval(cfg,detpath, annopath, imagesetfile, classname, ovthresh=0.5, use_07_metric=False):
     """rec, prec, ap = voc_eval(detpath,
                                 annopath,
                                 imagesetfile,
@@ -106,6 +106,7 @@ def voc_eval(detpath, annopath, imagesetfile, classname, ovthresh=0.5, use_07_me
 
     # first load gt
     # read list of images
+    _IW,_IH=cfg.IN_SIZE
     with open(imagesetfile, "r") as f:
         lines = f.readlines()
     imagenames = [x.strip() for x in lines]
@@ -220,12 +221,13 @@ def read_image_and_target(root_dir,split):
     categories = dict(zip(range(len(cls)), cls))
 
 
-def process():
-    net=trcnet.trcnet50()
-    net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_3400.pth")
-
-    device = torch.device("cuda")
-    net.to(device)
+def process(cfg):
+    # net=trcnet.trcnet50()
+    # net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_3400.pth")
+    #
+    # device = torch.device("cuda")
+    # net.to(device)
+    net=load_model(cfg,"test")
     transforms = transform.Transform()
     dataset= voc.PascalVOCDataset(_dirname, _split,transforms=transforms)
     g_target_ids=dataset.ids
@@ -238,7 +240,9 @@ def process():
     data_loader = torch.utils.data.DataLoader(dataset, collate_fn=BatchCollator(), batch_size=batch_size,
                                               num_workers=1)
     net.eval()  # start learning BN
-
+    _IW,_IH=cfg.IN_SIZE
+    _OW,_OH=cfg.OUT_SIZE
+    _save_path=cfg.EVAL.SAVE_PATH
     with torch.no_grad():
         for idx, (images, targets, data_ids) in enumerate(data_loader,0):
             output = net(torch.stack(images).cuda())
@@ -253,7 +257,7 @@ def process():
             bbox_pred_np = bbox_pred.data.cpu().numpy()
             iou_pred_np = iou_pred.data.cpu().numpy()
 
-            _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = main_voc.build_target(bbox_pred_np, iou_pred_np,
+            _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = main_voc.build_target(cfg,bbox_pred_np, iou_pred_np,
                                                                                       targets)
             _boxes = main_voc.np_to_variable(_boxes)
             _ious = main_voc.np_to_variable(_ious)
@@ -275,11 +279,11 @@ def process():
                 image_id=g_target_ids[data_ids[b]]
 
                 if(_show):
-                    image=main_voc.show_image(images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],True)
+                    image=main_voc.show_image(cfg,images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],True)
                     cv2.imshow("image",image)
                     cv2.waitKey(0)
                 if(_save):
-                    image = main_voc.show_image(images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
+                    image = main_voc.show_image(cfg,images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
                                                 _classes[b], True)
                     cv2.imwrite(_save_path%(image_id),image)
                     image_score = np.array(iou_pred[0].view(1, _OW, _OH).cpu())*255
@@ -347,6 +351,7 @@ def process():
 
             for thresh in range(50, 100, 5):
                 rec, prec, ap = voc_eval(
+                    cfg,
                     res_file_template,
                     _anno_file_template,
                     _image_set_path,
@@ -377,5 +382,33 @@ def process():
     #         )
 
 if __name__=="__main__":
-    ret=process()
+    parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
+    parser.add_argument(
+        "--config_file",
+        default="",
+        metavar="FILE",
+        help="path to config file",
+        type=str,
+    )
+    parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument(
+        "--skip-test",
+        dest="skip_test",
+        help="Do not test the final model",
+        action="store_true",
+    )
+    parser.add_argument(
+        "opts",
+        help="Modify config options using the command-line",
+        default=None,
+        nargs=argparse.REMAINDER,
+    )
+
+    args = parser.parse_args()
+    cfg.merge_from_file(args.config_file)
+    # cfg.merge_from_list(args.opts)
+    cfg.freeze()
+
+
+    ret=process(cfg)
     print(ret)
