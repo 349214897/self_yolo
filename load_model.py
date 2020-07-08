@@ -5,7 +5,8 @@ from backbone import trcnet14
 from torchvision import models
 import torch
 
-def load_model(cfg,mode):
+def load_model(cfg):
+    mode=cfg.STATE
     arch=cfg.MODEL.ARCH
     if(mode=="train"):
         if(arch=="trcnet"):

@@ -533,7 +533,7 @@ def train(cfg):
     # # net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou/weights/iter_200.pth")
     # device = torch.device("cuda")
     # net.to(device)
-    net=load_model(cfg,"train")
+    net=load_model(cfg)
 
     # create your optimizer
     optimizer = optim.SGD(net.parameters(), lr=0.001)

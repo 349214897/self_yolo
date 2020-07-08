@@ -227,7 +227,7 @@ def process(cfg):
     #
     # device = torch.device("cuda")
     # net.to(device)
-    net=load_model(cfg,"test")
+    net=load_model(cfg)
     transforms = transform.Transform()
     dataset= voc.PascalVOCDataset(_dirname, _split,transforms=transforms)
     g_target_ids=dataset.ids
