@@ -403,10 +403,10 @@ def show_image(image,bbox,score,target_box,target_score,pred_class,target_class,
 
     pred_bbox_np=bbox.cpu().detach().numpy()
     pred_score_np=score.cpu().detach().numpy()
-    pred_class_np = pred_class.cpu().numpy()
+    pred_class_np = pred_class.cpu().detach().numpy()
     target_bbox_np=target_box.cpu().numpy()
     target_score_np=target_score.cpu().numpy()
-    target_class_np = target_class
+    target_class_np = target_class.cpu().detach().numpy()
 
 
     H,W=14,14
@@ -538,7 +538,7 @@ def train(cfg):
     writer=SummaryWriter('log')
 
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset("/home/tan/e_work/datasets/VOC/VOC2012", "trainval",transforms=transforms)
+    dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
     batch_size=16
