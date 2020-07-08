@@ -83,22 +83,6 @@ _C.STATE = "train"
 _C.EVAL = CN()
 _C.EVAL.SAVE_PATH="/home/tan/docker_workspace/self_yolo/result/%s.jpg"
 
-
-#
-
-
-# Image ColorJitter
-_C.INPUT.BRIGHTNESS = 0.0
-_C.INPUT.CONTRAST = 0.0
-_C.INPUT.SATURATION = 0.0
-_C.INPUT.HUE = 0.0
-
-# Flips
-_C.INPUT.HORIZONTAL_FLIP_PROB_TRAIN = 0.5
-_C.INPUT.VERTICAL_FLIP_PROB_TRAIN = 0.0
-
-
-
 # Precision of input, allowable: (float32, float16)
 _C.DTYPE = "float32"
 
