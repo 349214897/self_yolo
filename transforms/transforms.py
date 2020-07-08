@@ -119,3 +119,10 @@ class Normalize(object):
         if target is None:
             return image
         return image, target
+
+class Transform_self(object):
+    def __call__(self,image,target):
+        image = F.resize(image, (448,448))
+        target = target.resize((448,448))
+        # image=F.to_tensor(image)
+        return image,target

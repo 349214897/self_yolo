@@ -1,10 +1,6 @@
 import torch
-import os
 import torch.optim as optim
-from sfs_dw1 import Yolo
-from sfs_dw1 import SfsVps
 import cv2
-from collections import defaultdict
 import numpy as np
 import torch.nn as nn
 import torch.utils.data
@@ -12,8 +8,9 @@ from dataset import voc
 from dataset import transform
 from torch.autograd import Variable
 from torch.utils.data.sampler import BatchSampler
-from backbone import trcnet
-from torchvision import models
+from transforms.build import build_transforms
+
+
 
 import torch.nn.functional as F
 
@@ -542,7 +539,8 @@ def train(cfg):
     from tensorboardX import SummaryWriter
     writer=SummaryWriter('log')
 
-    transforms = transform.Transform()
+    # transforms = transform.Transform()
+    transforms=build_transforms(cfg,True)
     dataset= voc.PascalVOCDataset("/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2012", "trainval",transforms=transforms)
 
     sample=torch.utils.data.RandomSampler(dataset)
