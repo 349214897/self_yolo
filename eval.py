@@ -12,8 +12,8 @@ import main_voc
 import cv2
 from config import cfg
 import argparse
-
 from load_model import load_model
+import os
 
 def parse_rec(filename):
     """Parse a PASCAL VOC xml file."""
@@ -194,7 +194,6 @@ def voc_eval(cfg,detpath, annopath, imagesetfile, classname, ovthresh=0.5, use_0
     return rec, prec, ap
 
 def read_image_and_target(root_dir,split):
-    import os
     _annopath = os.path.join(root_dir, "Annotations", "%s.xml")
     _imgpath = os.path.join(root_dir, "JPEGImages", "%s.jpg")
     _imgsetpath = os.path.join(root_dir, "ImageSets", "Main", "%s.txt")
@@ -210,25 +209,10 @@ def read_image_and_target(root_dir,split):
 
 
 def process(cfg):
-    # net=trcnet.trcnet50()
-    # net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_3400.pth")
-    #
-    # device = torch.device("cuda")
-    # net.to(device)
-    _dirname = cfg.DATASET.PATH
-    _split = cfg.DATASET.SPLIT
-    _is_2007 = True
-    _show = False
-    _predictions = defaultdict(list)
-    import os
-    _anno_file_template = os.path.join(_dirname, "Annotations", "{}.xml")
-    _image_set_path = os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
-    _save = True
-
 
     net=load_model(cfg)
     transforms = transform.Transform()
-    dataset= voc.PascalVOCDataset(_dirname, _split,transforms=transforms)
+    dataset= voc.PascalVOCDataset(cfg.DATASET.PATH, cfg.DATASET.SPLIT,transforms=transforms)
     g_target_ids=dataset.ids
     sample=torch.utils.data.RandomSampler(dataset)
     batch_size=1
@@ -242,6 +226,16 @@ def process(cfg):
     _IW,_IH=cfg.IN_SIZE
     _OW,_OH=cfg.OUT_SIZE
     _save_path=cfg.EVAL.SAVE_PATH
+
+    _show =False
+    _predictions = defaultdict(list)
+    _anno_file_template=os.path.join(cfg.DATASET.PATH, "Annotations", "{}.xml")
+    _image_set_path=os.path.join(cfg.DATASET.PATH, "ImageSets", "Main", cfg.DATASET.SPLIT + ".txt")
+    _save=True
+    _is_2007= True
+
+    if(not os.path.isdir(_save_path)):
+        os.mkdir(_save_path)
     with torch.no_grad():
         for idx, (images, targets, data_ids) in enumerate(data_loader,0):
             output = net(torch.stack(images).cuda())
@@ -284,11 +278,11 @@ def process(cfg):
                 if(_save):
                     image = main_voc.show_image(cfg,images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
                                                 _classes[b], True)
-                    cv2.imwrite(_save_path%(image_id),image)
+                    cv2.imwrite(os.path.join(_save_path,image_id+".jpg"),image)
                     image_score = np.array(iou_pred[0].view(1, _OW, _OH).cpu())*255
                     image_score=np.transpose(image_score, (1, 2, 0))
                     image_score =cv2.resize(image_score,(_IW,_IH))
-                    cv2.imwrite(_save_path%(image_id+"_score"),image_score)
+                    cv2.imwrite(os.path.join(_save_path,image_id+"_score.jpg"),image_score)
 
                 mask=score_bs>0.7
                 bbox_bs=bbox_bs[mask]
@@ -336,9 +330,13 @@ def process(cfg):
     predictions = _predictions
 
     import tempfile
-    import os
     classes=dataset.CLASSES
-    with tempfile.TemporaryDirectory(prefix="pascal_voc_eval_") as dirname:
+    import sys
+    major=sys.version_info.major
+    if major==2:
+        dirname=os.path.join(cfg.EVAL.SAVE_PATH,"pascal_voc")
+        if(not os.path.isdir(dirname)):
+            os.mkdir(dirname)
         res_file_template = os.path.join(dirname, "{}.txt")
 
         aps = defaultdict(list)  # iou -> ap per class
@@ -359,7 +357,31 @@ def process(cfg):
                     use_07_metric=_is_2007,
                 )
                 aps[thresh].append(ap * 100)
-        print("ok")
+        # os.rmdir(dirname)
+
+    if major==3:
+        with tempfile.TemporaryDirectory(prefix="pascal_voc_eval_") as dirname:
+            res_file_template = os.path.join(dirname, "{}.txt")
+
+            aps = defaultdict(list)  # iou -> ap per class
+            for cls_id, cls_name in enumerate(classes):
+                lines = predictions.get(cls_id, [""])
+
+                with open(res_file_template.format(cls_name), "w") as f:
+                    f.write("\n".join(lines))
+
+                for thresh in range(50, 100, 5):
+                    rec, prec, ap = voc_eval(
+                        cfg,
+                        res_file_template,
+                        _anno_file_template,
+                        _image_set_path,
+                        cls_name,
+                        ovthresh=thresh / 100.0,
+                        use_07_metric=_is_2007,
+                    )
+                    aps[thresh].append(ap * 100)
+            print("ok")
 
     ret = OrderedDict()
     mAP = {iou: np.mean(x) for iou, x in aps.items()}
