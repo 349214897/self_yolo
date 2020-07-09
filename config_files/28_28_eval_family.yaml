@@ -8,3 +8,7 @@ DATASET:
     SPLIT: "val_small"
 EVAL:
     SAVE_PATH: "/home/tan/e_work/result/%s.jpg"
+
+
+#multi pos pt
+#OrderedDict([('bbox', {'AP': 13.219653815979708, 'AP50': 34.40009237551982, 'AP75': 8.003424357099915})])

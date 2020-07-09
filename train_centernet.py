@@ -134,6 +134,42 @@ def no_anchor_to_bbox(bbox_pred,H,W):
                         bbox_out[b, ind, a, 3] = 1
     return bbox_out
 
+def decode_bbox(bbox_pred,H,W):
+    bsize=bbox_pred.shape[0]
+    num_anchors=1
+    bbox_out = np.zeros((bsize,H*W,num_anchors,4),dtype=float)
+    for b in range(bsize):
+        for row in range(H):
+            for col in range(W):
+                ind = row * W + col
+                for a in range(num_anchors):
+                    #off=cx-(ind+0.5)
+                    cx=(col+0.5)/W+bbox_pred[b, ind, a, 0]
+                    cy=(row+0.5)/H+bbox_pred[b, ind, a, 1]
+                    w=bbox_pred[b, ind, a, 2]
+                    h=bbox_pred[b, ind, a, 3]
+                    minx=cx-w/2.0
+                    miny=cy-h/2.0
+                    maxx=cx+w/2.0
+                    maxy=cy+h/2.0
+                    if(minx>0):
+                        bbox_out[b, ind, a, 0] = minx
+                    else:
+                        bbox_out[b, ind, a, 0] = 0
+                    if(miny>0):
+                        bbox_out[b, ind, a, 1] = miny
+                    else:
+                        bbox_out[b, ind, a, 1] = 0
+                    if(maxx<1):
+                        bbox_out[b, ind, a, 2] = maxx
+                    else:
+                        bbox_out[b, ind, a, 2] = 1
+                    if(maxy<1):
+                        bbox_out[b, ind, a, 3] = (row+0.5)/H+bbox_pred[b, ind, a, 3]
+                    else:
+                        bbox_out[b, ind, a, 3] = 1
+    return bbox_out
+
 def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
     bsize = bbox_pred_np.shape[0]
 
@@ -166,7 +202,7 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
     # scale pred_bbox
 
     # bbox_pred_np = np.expand_dims(bbox_pred_np, 0)
-    bbox_np = no_anchor_to_bbox(
+    bbox_np = decode_bbox(
         np.ascontiguousarray(bbox_pred_np, dtype=np.float),
         H, W)
     # bbox_np = (hw, num_anchors, (x1, y1, x2, y2))   range: 0 ~ 1
@@ -203,13 +239,13 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
         box_w = (gt_boxes_b[:, 2] - gt_boxes_b[:, 0])/cell_w
         box_h = (gt_boxes_b[:, 3] - gt_boxes_b[:, 1])/cell_w
 
-        target_boxes = np.empty(gt_boxes_b.shape, dtype=np.float)
-        target_boxes[:, 0] = cx - np.floor(cx)  # cx
-        target_boxes[:, 1] = cy - np.floor(cy)  # cy
-        target_boxes[:, 2] = \
-            (gt_boxes_b[:, 2] - gt_boxes_b[:, 0]) / inp_size[0] * out_size[0]  # tw
-        target_boxes[:, 3] = \
-            (gt_boxes_b[:, 3] - gt_boxes_b[:, 1]) / inp_size[1] * out_size[1]  # th
+        # target_boxes = np.empty(gt_boxes_b.shape, dtype=np.float)
+        # target_boxes[:, 0] = cx - np.floor(cx)  # cx
+        # target_boxes[:, 1] = cy - np.floor(cy)  # cy
+        # target_boxes[:, 2] = \
+        #     (gt_boxes_b[:, 2] - gt_boxes_b[:, 0]) / inp_size[0] * out_size[0]  # tw
+        # target_boxes[:, 3] = \
+        #     (gt_boxes_b[:, 3] - gt_boxes_b[:, 1]) / inp_size[1] * out_size[1]  # th
 
         ious_reshaped = np.reshape(ious, [hw, num_anchors, len(cell_inds)])
         pos_pt_num=len(cell_inds)
@@ -258,6 +294,8 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
                     if(w_ind+n<0 or w_ind+n>=W):
                         continue
                     tmp_ind = (h_ind+m) * W + w_ind+n
+                    x_coord=(w_ind+n+0.5)/W
+                    y_coord=(h_ind+m+0.5)/H
                     val = _iou_mask[b, tmp_ind, a, :]
                     if (1.0 - val < 0.0001):
                         continue
@@ -268,10 +306,10 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
                     _iou_mask[b, tmp_ind, a, :] = object_scale*probability
                     _box_mask[b, tmp_ind, a, :] = coord_scale
                     temp_box = gt_boxes_b[i].numpy().copy()
-                    temp_box[0::2]=temp_box[0::2]/inp_size[0]*out_size[0]
-                    temp_box[1::2] = temp_box[1::2] / inp_size[1] * out_size[1]
-                    temp_box[0::2]=np.abs(temp_box[0::2]-w_ind.numpy()-n-0.5)/W
-                    temp_box[1::2] = np.abs(temp_box[1::2] -h_ind.numpy()-m-0.5)/H
+                    temp_box[0]=cx[i]/W-x_coord
+                    temp_box[1] = cy[i] / H-y_coord
+                    temp_box[2]=box_w[i]/W
+                    temp_box[3] = box_h[i]/H
                     _boxes[b, tmp_ind, a, :] = temp_box
                     _class_mask[b, tmp_ind, a, :] = class_scale
                     _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.0
@@ -417,13 +455,13 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
     target_bbox_np = np.expand_dims(target_bbox_np,0)
 
     pred_score_mask=pred_score_np[:,0,0]>0.6
-    pred_bbox=no_anchor_to_bbox(pred_bbox_np,H,W)
+    pred_bbox=decode_bbox(pred_bbox_np,H,W)
     pred_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     pred_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
     pred_bbox=pred_bbox[0]
 
     target_score_mask=target_score_np[:,0,0]>0.8
-    target_bbox=no_anchor_to_bbox(target_bbox_np,H,W)
+    target_bbox=decode_bbox(target_bbox_np,H,W)
     target_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     target_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
     target_bbox=target_bbox[0]
@@ -571,7 +609,9 @@ def train(cfg):
         # # wh_pred = torch.exp(output[:, :, :, 2:4])
         # wh_pred = torch.sigmoid(output[:, :, :, 2:4])
         # bbox_pred = torch.cat([xy_pred, wh_pred], 3)
-        bbox_pred = torch.sigmoid(output[:, :, :, 0:4])
+        offxy=torch.tanh(output[:, :, :, 0:2])
+        wh = torch.sigmoid(output[:, :, :, 2:4])
+        bbox_pred = torch.cat([offxy, wh], 3)
         iou_pred = F.sigmoid(output[:, :, :, 4:5])
 
         score_pred = output[:, :, :, 5:].contiguous()
