@@ -1,5 +1,4 @@
 from collections import OrderedDict, defaultdict
-from sfs_dw1 import SfsVps
 from main_voc import no_anchor_to_bbox
 from main_voc import IterationBasedBatchSampler
 from main_voc import BatchCollator
@@ -9,23 +8,12 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import xml.etree.ElementTree as ET
-import os
 import main_voc
 import cv2
-from backbone import trcnet
 from config import cfg
 import argparse
-import os
-from load_model import load_model
 
-_dirname="/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2007"
-_split="val_small"
-_is_2007= True
-_show =False
-_predictions = defaultdict(list)
-_anno_file_template=os.path.join(_dirname, "Annotations", "{}.xml")
-_image_set_path=os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
-_save=True
+from load_model import load_model
 
 def parse_rec(filename):
     """Parse a PASCAL VOC xml file."""
@@ -227,6 +215,17 @@ def process(cfg):
     #
     # device = torch.device("cuda")
     # net.to(device)
+    _dirname = cfg.DATASET.PATH
+    _split = cfg.DATASET.SPLIT
+    _is_2007 = True
+    _show = False
+    _predictions = defaultdict(list)
+    import os
+    _anno_file_template = os.path.join(_dirname, "Annotations", "{}.xml")
+    _image_set_path = os.path.join(_dirname, "ImageSets", "Main", _split + ".txt")
+    _save = True
+
+
     net=load_model(cfg)
     transforms = transform.Transform()
     dataset= voc.PascalVOCDataset(_dirname, _split,transforms=transforms)

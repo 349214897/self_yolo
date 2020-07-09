@@ -1,0 +1,6 @@
+
+STATE: "test"
+MODEL:
+    ARCH: "trcnet"
+EVAL:
+    MODEL_PATH: "/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_5000.pth"
