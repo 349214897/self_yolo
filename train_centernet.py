@@ -165,7 +165,7 @@ def decode_bbox(bbox_pred,H,W):
                     else:
                         bbox_out[b, ind, a, 2] = 1
                     if(maxy<1):
-                        bbox_out[b, ind, a, 3] = (row+0.5)/H+bbox_pred[b, ind, a, 3]
+                        bbox_out[b, ind, a, 3] = maxy
                     else:
                         bbox_out[b, ind, a, 3] = 1
     return bbox_out
@@ -286,7 +286,6 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
                         continue
                     #use mask to ignore compute loss
                     _iou_mask[b, tmp_ind, a, :] = 0
-            rad=0
             for m in range(-rad,rad+1):
                 for n in range(-rad,rad+1):
                     if(h_ind+m<0 or h_ind+m>=H):
@@ -294,20 +293,22 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
                     if(w_ind+n<0 or w_ind+n>=W):
                         continue
                     tmp_ind = (h_ind+m) * W + w_ind+n
-                    x_coord=(w_ind+n+0.5)/W
-                    y_coord=(h_ind+m+0.5)/H
+                    x_coord=w_ind+n+0.5
+                    y_coord=h_ind+m+0.5
                     val = _iou_mask[b, tmp_ind, a, :]
+                    off_x=cx[i]-x_coord
+                    off_y=cy[i]-y_coord
                     if (1.0 - val < 0.0001):
                         continue
-                    probability=1.0/(np.sqrt(m*m+n*n+1))
+                    probability=1.0/(np.sqrt(float(off_x*off_x)+float(off_y*off_y)+1))
                     if (probability<val):
                         continue
                     _ious[b, tmp_ind, a, :] = 1.0
                     _iou_mask[b, tmp_ind, a, :] = object_scale*probability
                     _box_mask[b, tmp_ind, a, :] = coord_scale
                     temp_box = gt_boxes_b[i].numpy().copy()
-                    temp_box[0]=cx[i]/W-x_coord
-                    temp_box[1] = cy[i] / H-y_coord
+                    temp_box[0]=off_x/W
+                    temp_box[1] =off_y/H
                     temp_box[2]=box_w[i]/W
                     temp_box[3] = box_h[i]/H
                     _boxes[b, tmp_ind, a, :] = temp_box
