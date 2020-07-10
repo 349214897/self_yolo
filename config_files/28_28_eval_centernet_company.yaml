@@ -1,0 +1,10 @@
+OUT_SIZE: (28,28)
+STATE: "test"
+MODEL:
+    ARCH: "trcnet"
+    PATH: "/home/tan/docker_workspace/self_yolo/weights/iter_54000.pth"
+EVAL:
+    SAVE_PATH: "/home/tan/docker_workspace/self_yolo/result"
+DATASET:
+    PATH: "/media/tan/DATA/data/obstacle/train/VOCdevkit/VOC2007"
+    SPLIT: "val_small"
