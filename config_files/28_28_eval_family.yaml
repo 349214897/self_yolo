@@ -2,7 +2,7 @@ OUT_SIZE: (28,28)
 STATE: "test"
 MODEL:
     ARCH: "trcnet"
-    PATH: "/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_5000.pth"
+    PATH: "/home/tan/e_work/project/self_yolo_anchorfree_iou_loss/weights/iter_76500.pth"
 DATASET:
     PATH: "/home/tan/e_work/datasets/VOC/VOC2007"
     SPLIT: "val_small"
@@ -12,3 +12,5 @@ EVAL:
 
 #multi pos pt
 #OrderedDict([('bbox', {'AP': 13.219653815979708, 'AP50': 34.40009237551982, 'AP75': 8.003424357099915})])
+#single pos pt
+#OrderedDict([('bbox', {'AP': 14.107202949593319, 'AP50': 37.369052208219784, 'AP75': 8.281031736880244})])

@@ -290,7 +290,7 @@ def process(cfg):
                     image_score =cv2.resize(image_score,(_IW,_IH))
                     cv2.imwrite(_save_path%(image_id+"_score"),image_score)
 
-                mask=score_bs>0.7
+                mask=score_bs>0.9
                 bbox_bs=bbox_bs[mask]
                 score_bs=score_bs[mask]
                 cat_bs=cat_bs[mask]
