@@ -1,5 +1,6 @@
 from collections import OrderedDict, defaultdict
-from main_voc import no_anchor_to_bbox
+from train_centernet import decode_bbox
+import train_centernet
 from main_voc import IterationBasedBatchSampler
 from main_voc import BatchCollator
 from dataset import voc
@@ -207,6 +208,10 @@ def read_image_and_target(root_dir,split):
     class_to_ind = dict(zip(cls, range(len(cls))))
     categories = dict(zip(range(len(cls)), cls))
 
+# def postprocess(cfg,bbox_bs,score_bs,cat_bs):
+#     thresh=cfg.POSTPROCESS.THRESH
+#     cand_inds=np.where(score_bs>0.3)
+
 
 def process(cfg):
 
@@ -241,7 +246,9 @@ def process(cfg):
             output = net(torch.stack(images).cuda())
             bsize, _, h, w = output.size()
             output = output.permute(0, 2, 3, 1).contiguous().view(bsize, -1, 1, 26)
-            bbox_pred = torch.sigmoid(output[:, :, :, 0:4])
+            offxy = torch.tanh(output[:, :, :, 0:2])
+            wh = torch.sigmoid(output[:, :, :, 2:4])
+            bbox_pred = torch.cat([offxy, wh], 3)
             iou_pred = F.sigmoid(output[:, :, :, 4:5])
 
             score_pred = output[:, :, :, 5:].contiguous()
@@ -255,7 +262,7 @@ def process(cfg):
             _boxes = main_voc.np_to_variable(_boxes)
             _ious = main_voc.np_to_variable(_ious)
 
-            bbox_np = no_anchor_to_bbox(
+            bbox_np = decode_bbox(
                 np.ascontiguousarray(bbox_pred_np, dtype=np.float),
                 _OH, _OW)
             # bbox_np = (hw, num_anchors, (x1, y1, x2, y2))   range: 0 ~ 1
@@ -263,20 +270,36 @@ def process(cfg):
             bbox_np[:, :, :, 0::2] *= float(_IW)  # rescale x
             bbox_np[:, :, :, 1::2] *= float(_IH)  # rescale y
 
+
+
+
+
             scores = iou_pred.cpu().numpy()
             cats = prob_pred.cpu().numpy()
             for b in range(bsize):
                 bbox_bs=bbox_np[b]
                 cat_bs=cats[b]
+
+                # center_map = np.zeros((28, 28), dtype=np.int8)
+                # for i in range(28):
+                #     for j in range(28):
+                #         score=scores[b][i,j,0]
+                #         offxy=bbox_bs[i,j,0:2]
+                #         center_map[int((i+0.5)+offxy[1]),int((j+0.5)+offxy[0])]=center_map[int((i+0.5)+offxy[1]),int((j+0.5)+offxy[0])]+score
+                # cv2.imshow("center_score",center_map)
+                # cv2.imshow("score",scores[b,:,:,0])
+                # cv2.waitKey(0)
+
+
                 score_bs=scores[b].reshape(scores[b].shape[0])
                 image_id=g_target_ids[data_ids[b]]
 
                 if(_show):
-                    image=main_voc.show_image(cfg,images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],True)
+                    image=train_centernet.show_image(cfg,images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],True)
                     cv2.imshow("image",image)
                     cv2.waitKey(0)
                 if(_save):
-                    image = main_voc.show_image(cfg,images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
+                    image = train_centernet.show_image(cfg,images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
                                                 _classes[b], True)
                     cv2.imwrite(os.path.join(_save_path,image_id+".jpg"),image)
                     image_score = np.array(iou_pred[0].view(1, _OW, _OH).cpu())*255
@@ -284,7 +307,9 @@ def process(cfg):
                     image_score =cv2.resize(image_score,(_IW,_IH))
                     cv2.imwrite(os.path.join(_save_path,image_id+"_score.jpg"),image_score)
 
-                mask=score_bs>0.9
+                center_map = np.zeros((448, 448), dtype=np.int8)
+
+                mask=score_bs>0.8
                 bbox_bs=bbox_bs[mask]
                 score_bs=score_bs[mask]
                 cat_bs=cat_bs[mask]
@@ -357,7 +382,6 @@ def process(cfg):
                     use_07_metric=_is_2007,
                 )
                 aps[thresh].append(ap * 100)
-        # os.rmdir(dirname)
 
     if major==3:
         with tempfile.TemporaryDirectory(prefix="pascal_voc_eval_") as dirname:

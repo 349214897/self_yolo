@@ -1,0 +1,7 @@
+OUT_SIZE: (28,28)
+STATE: "train"
+MODEL:
+    ARCH: "trcnet"
+LR: 0.001
+INPUT:
+    VERTICAL_FLIP_PROB_TRAIN: 0.0

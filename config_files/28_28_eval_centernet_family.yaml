@@ -1,0 +1,10 @@
+OUT_SIZE: (28,28)
+STATE: "test"
+MODEL:
+    ARCH: "trcnet"
+    PATH: "/media/tan/T5/weights_centernet/iter_54000.pth"
+EVAL:
+    SAVE_PATH: "/home/tan/e_work/result_centernet"
+DATASET:
+    PATH: "/home/tan/e_work/datasets/VOC/VOC2007"
+    SPLIT: "val_small"

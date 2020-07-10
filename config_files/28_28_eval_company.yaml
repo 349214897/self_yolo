@@ -1,7 +1,8 @@
-OUT_SIZE: (14,14)
+OUT_SIZE: (28,28)
 STATE: "test"
 MODEL:
-    ARCH: "trcnet14"
+    ARCH: "trcnet"
+    PATH: "/home/tan/docker_workspace/self_yolo/weights/iter_25000.pth"
 EVAL:
     SAVE_PATH: "/home/tan/docker_workspace/self_yolo/result"
 DATASET:
