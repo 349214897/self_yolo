@@ -8,3 +8,6 @@ EVAL:
 DATASET:
     PATH: "/home/tan/e_work/datasets/VOC/VOC2007"
     SPLIT: "val_small"
+POSTPROCESS:
+    THRESH: 0.1
+    NMS_THRESH: 0.9

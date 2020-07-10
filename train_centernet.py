@@ -455,13 +455,13 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
     pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
     target_bbox_np = np.expand_dims(target_bbox_np,0)
 
-    pred_score_mask=pred_score_np[:,0,0]>0.6
+    pred_score_mask=pred_score_np[:,0,0]>cfg.POSTPROCESS.THRESH
     pred_bbox=decode_bbox(pred_bbox_np,H,W)
     pred_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     pred_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
     pred_bbox=pred_bbox[0]
 
-    target_score_mask=target_score_np[:,0,0]>0.8
+    target_score_mask=target_score_np[:,0,0]>cfg.POSTPROCESS.THRESH
     target_bbox=decode_bbox(target_bbox_np,H,W)
     target_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     target_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
@@ -473,7 +473,7 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
         print("!!!!!!!!!!!!!!!!!!!!no predict!!!!")
         return imageshow
     class_id=pred_class_np.argmax(axis=1)
-    keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.3)
+    keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],cfg.POSTPROCESS.NMS_THRESH)
     devide=[1.0]*21
     for idx in keep:
         pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))

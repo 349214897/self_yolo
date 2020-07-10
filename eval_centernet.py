@@ -309,7 +309,7 @@ def process(cfg):
 
                 center_map = np.zeros((448, 448), dtype=np.int8)
 
-                mask=score_bs>0.8
+                mask=score_bs>cfg.POSTPROCESS.THRESH
                 bbox_bs=bbox_bs[mask]
                 score_bs=score_bs[mask]
                 cat_bs=cat_bs[mask]
@@ -324,7 +324,7 @@ def process(cfg):
                         continue
                     bbox_bs_i=bbox_bs[class_i]
                     score_bs_i=score_bs[class_i]
-                    keep_i=main_voc.nms(bbox_bs_i,score_bs_i,0.3)
+                    keep_i=main_voc.nms(bbox_bs_i,score_bs_i,cfg.POSTPROCESS.NMS_THRESH)
                     keep[class_i[keep_i]]=1
                 keep= np.where(keep>0)
                 # keep=main_voc.nms(bbox_bs,score_bs,0.2)
