@@ -1,14 +1,17 @@
-OUT_SIZE: (28,28)
+OUT_SIZE: (14,14)
 STATE: "test"
 MODEL:
-    ARCH: "trcnet"
-    PATH: ""
+    ARCH: "trcnet14"
+    PATH: "/media/tan/T5/weights_w5/iter_86000.pth"
 DATASET:
     PATH: "/home/tan/e_work/datasets/VOC/VOC2007"
     SPLIT: "val_small"
 EVAL:
-    SAVE_PATH: "/home/tan/e_work/result/%s.jpg"
-
+    SAVE_PATH: "/home/tan/e_work/result/"
+POSTPROCESS:
+    THRESH: 0.8
+    NMS_THRESH: 0.5
+    SHOW_GT: True
 
 #multi pos pt
 #OrderedDict([('bbox', {'AP': 13.219653815979708, 'AP50': 34.40009237551982, 'AP75': 8.003424357099915})])#iter5000

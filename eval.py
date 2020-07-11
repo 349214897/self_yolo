@@ -279,13 +279,21 @@ def process(cfg):
                 if(_save):
                     image = main_voc.show_image(cfg,images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
                                                 _classes[b], True)
-                    cv2.imwrite(os.path.join(_save_path,image_id+".jpg"),image)
+                    # cv2.imwrite(os.path.join(_save_path,image_id+".jpg"),image)
+                    ##将score叠加到image上同步查看
                     image_score = np.array(iou_pred[0].view(1, _OW, _OH).cpu())*255
-                    image_score=np.transpose(image_score, (1, 2, 0))
+                    image_score = np.transpose(image_score, (1, 2, 0))
+                    image_score1= np.zeros(image_score.shape,dtype=np.float32)
+                    image_score2=np.zeros(image_score.shape,dtype=np.float32)
+                    image_score=cv2.merge([image_score1,image_score2,image_score])
                     image_score =cv2.resize(image_score,(_IW,_IH))
-                    cv2.imwrite(os.path.join(_save_path,image_id+"_score.jpg"),image_score)
+                    image_sum=image+image_score
+                    # cv2.imwrite(os.path.join(_save_path,image_id+"_score.jpg"),image_score)
+                    cv2.imwrite(os.path.join(_save_path, image_id + "_sum.jpg"), image_sum)
 
-                mask=score_bs>0.9
+                center_map = np.zeros((448, 448), dtype=np.int8)
+
+                mask=score_bs>cfg.POSTPROCESS.THRESH
                 bbox_bs=bbox_bs[mask]
                 score_bs=score_bs[mask]
                 cat_bs=cat_bs[mask]
@@ -300,7 +308,7 @@ def process(cfg):
                         continue
                     bbox_bs_i=bbox_bs[class_i]
                     score_bs_i=score_bs[class_i]
-                    keep_i=main_voc.nms(bbox_bs_i,score_bs_i,0.3)
+                    keep_i=main_voc.nms(bbox_bs_i,score_bs_i,cfg.POSTPROCESS.NMS_THRESH)
                     keep[class_i[keep_i]]=1
                 keep= np.where(keep>0)
                 # keep=main_voc.nms(bbox_bs,score_bs,0.2)
@@ -369,7 +377,7 @@ def process(cfg):
 
             aps = defaultdict(list)  # iou -> ap per class
             for cls_id, cls_name in enumerate(classes):
-                ##model预测的种类没有这一类，在评测时需排除
+                #model预测的种类没有这一类，在评测时需排除
                 if(cls_name == "__background__"):
                     continue
                 lines = predictions.get(cls_id, [""])

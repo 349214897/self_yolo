@@ -364,7 +364,7 @@ def nms(dets, scores, thresh):
 
     return keep
 
-def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_class,only_pred=False):
+def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_class,show_gt=False):
     CLASSES = (
         "__background__ ",
         "aeroplane",
@@ -416,13 +416,13 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
     pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
     target_bbox_np = np.expand_dims(target_bbox_np,0)
 
-    pred_score_mask=pred_score_np[:,0,0]>0.6
+    pred_score_mask=pred_score_np[:,0,0]>cfg.POSTPROCESS.THRESH
     pred_bbox=no_anchor_to_bbox(pred_bbox_np,H,W)
     pred_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     pred_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
     pred_bbox=pred_bbox[0]
 
-    target_score_mask=target_score_np[:,0,0]>0.8
+    target_score_mask=target_score_np[:,0,0]>cfg.POSTPROCESS.THRESH
     target_bbox=no_anchor_to_bbox(target_bbox_np,H,W)
     target_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
     target_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
@@ -434,7 +434,7 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
         print("!!!!!!!!!!!!!!!!!!!!no predict!!!!")
         return imageshow
     class_id=pred_class_np.argmax(axis=1)
-    keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],0.3)
+    keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],cfg.POSTPROCESS.NMS_THRESH)
     devide=[1.0]*21
     for idx in keep:
         pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))
@@ -445,7 +445,14 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
         cv2.putText(imageshow,str(CLASSES[int(class_id[idx])])+" "+"%.2f"%(float(pred_score_np[pred_score_mask,0,0][idx])),pt1,2,1,(0,255,0))
         devide[int(class_id[idx])]=devide[int(class_id[idx])]+1
 
-    if(only_pred==False):
+        # center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
+        # # cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
+        # cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
+        # lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
+        # rb = lt[0] + 32, lt[1] + 32
+        # cv2.rectangle(imageshow, lt, rb, (0, 255, 0), 1)
+
+    if(show_gt):
         target_bbox=target_bbox[target_score_mask,0,:]
         target_class_np=target_class_np[target_score_mask,0,:]
         target_class_id=target_class_np.argmax(axis=1)
