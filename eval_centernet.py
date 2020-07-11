@@ -374,6 +374,9 @@ def process(cfg):
 
         aps = defaultdict(list)  # iou -> ap per class
         for cls_id, cls_name in enumerate(classes):
+            ##model预测的种类没有这一类，在评测时需排除
+            if (cls_name == "__background__"):
+                continue
             lines = predictions.get(cls_id, [""])
 
             with open(res_file_template.format(cls_name), "w") as f:

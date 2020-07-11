@@ -114,10 +114,11 @@ def voc_eval(cfg,detpath, annopath, imagesetfile, classname, ovthresh=0.5, use_0
         im_info = tuple(map(int, (size.find("height").text, size.find("width").text)))
 
         R = [obj for obj in recs[imagename] if obj["name"] == classname]
-        bbox = np.array([x["bbox"] for x in R])
+        bbox = np.array([x["bbox"] for x in R]).astype(float)
+        #减一是因为voc标的数据中坐标从一开始的！！！
         for e in range(bbox.shape[0]):
-            bbox[e,::2]=bbox[e,::2]/float(im_info[1])*_IW
-            bbox[e, 1::2] = bbox[e, 1::2] / float(im_info[0])*_IH
+            bbox[e,::2]=(bbox[e,::2]-1)/float(im_info[1])*_IW
+            bbox[e, 1::2] = (bbox[e, 1::2]-1) / float(im_info[0])*_IH
         difficult = np.array([x["difficult"] for x in R]).astype(np.bool)
         # difficult = np.array([False for x in R]).astype(np.bool)  # treat all "difficult" as GT
         det = [False] * len(R)
@@ -232,7 +233,7 @@ def process(cfg):
     _anno_file_template=os.path.join(cfg.DATASET.PATH, "Annotations", "{}.xml")
     _image_set_path=os.path.join(cfg.DATASET.PATH, "ImageSets", "Main", cfg.DATASET.SPLIT + ".txt")
     _save=True
-    _is_2007= True
+    _is_2007= False
 
     if(not os.path.isdir(_save_path)):
         os.mkdir(_save_path)
@@ -341,6 +342,9 @@ def process(cfg):
 
         aps = defaultdict(list)  # iou -> ap per class
         for cls_id, cls_name in enumerate(classes):
+            ##model预测的种类没有这一类，在评测时需排除
+            if (cls_name == "__background__"):
+                continue
             lines = predictions.get(cls_id, [""])
 
             with open(res_file_template.format(cls_name), "w") as f:
@@ -365,6 +369,9 @@ def process(cfg):
 
             aps = defaultdict(list)  # iou -> ap per class
             for cls_id, cls_name in enumerate(classes):
+                ##model预测的种类没有这一类，在评测时需排除
+                if(cls_name == "__background__"):
+                    continue
                 lines = predictions.get(cls_id, [""])
 
                 with open(res_file_template.format(cls_name), "w") as f:
