@@ -15,7 +15,7 @@ else:
 class PascalVOCDataset(torch.utils.data.Dataset):
 
     CLASSES = (
-        "__background__ ",
+        "__background__",
         "aeroplane",
         "bicycle",
         "bird",

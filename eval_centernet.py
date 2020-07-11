@@ -115,10 +115,11 @@ def voc_eval(cfg,detpath, annopath, imagesetfile, classname, ovthresh=0.5, use_0
         im_info = tuple(map(int, (size.find("height").text, size.find("width").text)))
 
         R = [obj for obj in recs[imagename] if obj["name"] == classname]
-        bbox = np.array([x["bbox"] for x in R])
+        bbox = np.array([x["bbox"] for x in R]).astype(float)
+        #减一是因为voc标的数据中坐标从一开始的！！！
         for e in range(bbox.shape[0]):
-            bbox[e,::2]=bbox[e,::2]/float(im_info[1])*_IW
-            bbox[e, 1::2] = bbox[e, 1::2] / float(im_info[0])*_IH
+            bbox[e,::2]=(bbox[e,::2]-1)/float(im_info[1])*_IW
+            bbox[e, 1::2] = (bbox[e, 1::2]-1) / float(im_info[0])*_IH
         difficult = np.array([x["difficult"] for x in R]).astype(np.bool)
         # difficult = np.array([False for x in R]).astype(np.bool)  # treat all "difficult" as GT
         det = [False] * len(R)
@@ -237,7 +238,7 @@ def process(cfg):
     _anno_file_template=os.path.join(cfg.DATASET.PATH, "Annotations", "{}.xml")
     _image_set_path=os.path.join(cfg.DATASET.PATH, "ImageSets", "Main", cfg.DATASET.SPLIT + ".txt")
     _save=True
-    _is_2007= True
+    _is_2007= False
 
     if(not os.path.isdir(_save_path)):
         os.mkdir(_save_path)
@@ -257,7 +258,7 @@ def process(cfg):
             bbox_pred_np = bbox_pred.data.cpu().numpy()
             iou_pred_np = iou_pred.data.cpu().numpy()
 
-            _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = main_voc.build_target(cfg,bbox_pred_np, iou_pred_np,
+            _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask = train_centernet.build_target(cfg,bbox_pred_np, iou_pred_np,
                                                                                       targets)
             _boxes = main_voc.np_to_variable(_boxes)
             _ious = main_voc.np_to_variable(_ious)
@@ -295,17 +296,23 @@ def process(cfg):
                 image_id=g_target_ids[data_ids[b]]
 
                 if(_show):
-                    image=train_centernet.show_image(cfg,images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],True)
+                    image=train_centernet.show_image(cfg,images[b],bbox_pred[b],iou_pred[b],_boxes[b],_ious[b],prob_pred[b],_classes[b],cfg.POSTPROCESS.SHOW_GT)
                     cv2.imshow("image",image)
                     cv2.waitKey(0)
                 if(_save):
                     image = train_centernet.show_image(cfg,images[b], bbox_pred[b], iou_pred[b], _boxes[b], _ious[b], prob_pred[b],
                                                 _classes[b], True)
-                    cv2.imwrite(os.path.join(_save_path,image_id+".jpg"),image)
+                    # cv2.imwrite(os.path.join(_save_path,image_id+".jpg"),image)
+                    ##将score叠加到image上同步查看
                     image_score = np.array(iou_pred[0].view(1, _OW, _OH).cpu())*255
-                    image_score=np.transpose(image_score, (1, 2, 0))
+                    image_score = np.transpose(image_score, (1, 2, 0))
+                    image_score1= np.zeros(image_score.shape,dtype=np.float32)
+                    image_score2=np.zeros(image_score.shape,dtype=np.float32)
+                    image_score=cv2.merge([image_score1,image_score2,image_score])
                     image_score =cv2.resize(image_score,(_IW,_IH))
-                    cv2.imwrite(os.path.join(_save_path,image_id+"_score.jpg"),image_score)
+                    image_sum=image+image_score
+                    # cv2.imwrite(os.path.join(_save_path,image_id+"_score.jpg"),image_score)
+                    cv2.imwrite(os.path.join(_save_path, image_id + "_sum.jpg"), image_sum)
 
                 center_map = np.zeros((448, 448), dtype=np.int8)
 
@@ -338,13 +345,14 @@ def process(cfg):
                     _predictions[cls[e,0]].append(
                         s
                     )
-    #             verify target is 100% or not
-    #             for e in range(len(targets[b])):
-    #                 s="%s %.3f %.1f %.1f %.1f %.1f"%(image_id,1.0,targets[b].bbox[e][0],targets[b].bbox[e][1],targets[b].bbox[e][2],targets[b].bbox[e][3])
-    #                 # print(s," ",cls[e,0])
-    #                 _predictions[int(targets[b].extra_fields["labels"][e])].append(
-    #                     s
-    #                 )
+
+                # verify target is 100% or not
+                # for e in range(len(targets[b])):
+                #     s="%s %.3f %.1f %.1f %.1f %.1f"%(image_id,1.0,targets[b].bbox[e][0],targets[b].bbox[e][1],targets[b].bbox[e][2],targets[b].bbox[e][3])
+                #     # print(s," ",cls[e,0])
+                #     _predictions[int(targets[b].extra_fields["labels"][e])].append(
+                #         s
+                #     )
 
     import pickle
     buffer = pickle.dumps(_predictions)
@@ -389,6 +397,9 @@ def process(cfg):
 
             aps = defaultdict(list)  # iou -> ap per class
             for cls_id, cls_name in enumerate(classes):
+                ##model预测的种类没有这一类，在评测时需排除
+                if(cls_name == "__background__"):
+                    continue
                 lines = predictions.get(cls_id, [""])
 
                 with open(res_file_template.format(cls_name), "w") as f:

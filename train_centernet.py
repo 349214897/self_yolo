@@ -403,7 +403,7 @@ def nms(dets, scores, thresh):
 
     return keep
 
-def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_class,only_pred=False):
+def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_class,show_gt=False):
     CLASSES = (
         "__background__ ",
         "aeroplane",
@@ -484,7 +484,14 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
         cv2.putText(imageshow,str(CLASSES[int(class_id[idx])])+" "+"%.2f"%(float(pred_score_np[pred_score_mask,0,0][idx])),pt1,2,1,(0,255,0))
         devide[int(class_id[idx])]=devide[int(class_id[idx])]+1
 
-    if(only_pred==False):
+        # center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
+        # # cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
+        # cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
+        # lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
+        # rb = lt[0] + 32, lt[1] + 32
+        # cv2.rectangle(imageshow, lt, rb, (0, 255, 0), 1)
+
+    if(show_gt):
         target_bbox=target_bbox[target_score_mask,0,:]
         target_class_np=target_class_np[target_score_mask,0,:]
         target_class_id=target_class_np.argmax(axis=1)
@@ -495,8 +502,8 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
             cv2.rectangle(imageshow,pt1,pt2,(255,0,0),2)
             cv2.putText(imageshow, str(CLASSES[int(target_class_id[idx])])+" "+"%.2f"%(float(target_score_np[target_score_mask,0,0][idx])), pt1, 2, 1, (255, 0, 0))
             # center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
-            # cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
-            # cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
+            # # cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
+            # cv2.circle(imageshow, center, 1, (0, 255, 255), 7)
             # lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
             # rb = lt[0] + 32, lt[1] + 32
             # cv2.rectangle(imageshow, lt, rb, (0, 255, 255), 3)

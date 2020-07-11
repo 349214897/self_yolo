@@ -4,10 +4,11 @@ MODEL:
     ARCH: "trcnet"
     PATH: "/media/tan/T5/weights_centernet/iter_54000.pth"
 EVAL:
-    SAVE_PATH: "/home/tan/e_work/result_centernet"
+    SAVE_PATH: "/home/tan/e_work/result_centernet2"
 DATASET:
     PATH: "/home/tan/e_work/datasets/VOC/VOC2007"
     SPLIT: "val_small"
 POSTPROCESS:
-    THRESH: 0.1
-    NMS_THRESH: 0.9
+    THRESH: 0.8
+    NMS_THRESH: 0.3
+    SHOW_GT: True

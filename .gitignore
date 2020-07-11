@@ -4,5 +4,6 @@ weights
 weights*
 log*
 result*
-__pycache__*
+*__pycache__*
 *.pyc
+.idea/
