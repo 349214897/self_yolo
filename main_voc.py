@@ -147,7 +147,7 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
     _class_mask= np.zeros([bsize,hw,num_anchors,num_classes],dtype=np.float)
 
     _ious = np.zeros([bsize,hw, num_anchors, 1], dtype=np.float)
-    _iou_mask = np.zeros([bsize,hw,num_anchors, 1], dtype=np.float)
+    _iou_mask = np.zeros([bsize,hw,num_anchors, 1], dtype=np.float)+0.0001
 
     _boxes = np.zeros([bsize,hw, num_anchors, 4], dtype=np.float)
     _boxes[:,:, :, 0:2] = 0.5
@@ -220,7 +220,7 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
         neg_pt_num=W*H-pos_pt_num
         neg_pt_score=float(3*pos_pt_num)/float(neg_pt_num)
         # _iou_mask[b,best_ious <= iou_thresh] = noobject_scale*neg_pt_score
-        _iou_mask[b, best_ious <= iou_thresh] = noobject_scale*0.01
+        _iou_mask[b, (best_ious <= iou_thresh)&(best_ious>cfg.SAMPLE_IGNORE_IOU_THRESH)] = noobject_scale*0.01
         for i, cell_ind in enumerate(cell_inds):
             if cell_ind >= hw or cell_ind < 0:
                 print('cell inds size {}'.format(len(cell_inds)))
@@ -236,24 +236,24 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
             h_ind=cell_ind/W
             w_ind=cell_ind%W
 
-            pos_range=0.2
-            ignore_range=0.7
-            rad = int(torch.sqrt(box_w[i]*box_w[i]+box_h[i]*box_h[i])*pos_range/2)
-            if(rad<1):
-                rad=1
-            rad_ignore=int(rad*ignore_range/pos_range)
-            for m in range(rad_ignore,rad_ignore+1):
-                for n in range(-rad_ignore,rad_ignore+1):
-                    if(h_ind+m<0 or h_ind+m>=H):
-                        continue
-                    if(w_ind+n<0 or w_ind+n>=W):
-                        continue
-                    tmp_ind = (h_ind + m) * W + w_ind + n
-                    val = _ious[b, tmp_ind, a, :]
-                    if (1.0 - val < 0.0001):
-                        continue
-                    #use mask to ignore compute loss
-                    _iou_mask[b, tmp_ind, a, :] = 0
+            # pos_range=0.2
+            # ignore_range=0.7
+            # rad = int(torch.sqrt(box_w[i]*box_w[i]+box_h[i]*box_h[i])*pos_range/2)
+            # if(rad<1):
+            #     rad=1
+            # rad_ignore=int(rad*ignore_range/pos_range)
+            # for m in range(rad_ignore,rad_ignore+1):
+            #     for n in range(-rad_ignore,rad_ignore+1):
+            #         if(h_ind+m<0 or h_ind+m>=H):
+            #             continue
+            #         if(w_ind+n<0 or w_ind+n>=W):
+            #             continue
+            #         tmp_ind = (h_ind + m) * W + w_ind + n
+            #         val = _ious[b, tmp_ind, a, :]
+            #         if (1.0 - val < 0.0001):
+            #             continue
+            #         #use mask to ignore compute loss
+            #         _iou_mask[b, tmp_ind, a, :] = 0
             rad=0
             for m in range(-rad,rad+1):
                 for n in range(-rad,rad+1):
@@ -593,7 +593,7 @@ def train(cfg):
         output=output.permute(0,2,3,1).contiguous().view(bsize,-1,len(cfg.ANCHORS),26)
 
         xy_pred = F.sigmoid(output[:, :, :, 0:2])
-        wh_pred = torch.exp(output[:, :, :, 2:4])
+        wh_pred = output[:, :, :, 2:4]
         bbox_pred = torch.cat([xy_pred, wh_pred], 3)
         iou_pred = F.sigmoid(output[:, :, :, 4:5])
 
@@ -640,12 +640,16 @@ def train(cfg):
             image=get_cv_image(images[0])
             # bbox_pred_s= np.expand_dims(bbox_pred[0], 0)
             bbox,score,cls=postprocess(bbox_pred_np[:1],iou_pred_np[:1],prob_pred_np[:1],cfg.IN_SIZE,cfg,cfg.POSTPROCESS.THRESH)
-            target_bbox,target_score,target_cls=postprocess(_box_mask[:1], _iou_mask[:1], _class_mask[:1],cfg.IN_SIZE,cfg,cfg.POSTPROCESS.THRESH)
+            target_bbox,target_score,target_cls=postprocess(_boxes[:1].cpu().numpy(), _ious[:1].cpu().numpy(), _classes[:1].cpu().numpy(),cfg.IN_SIZE,cfg,cfg.POSTPROCESS.THRESH)
             image=show_result(cfg,image,bbox,score,cls)
             image=show_result(cfg,image,target_bbox,target_score,target_cls)
             writer.add_image("image", torch.from_numpy(image).permute(2, 0, 1), idx)
-            writer.add_image("score", iou_pred[0].view(1, W, H), idx)
-            writer.add_image("target_score", _ious[0].view(1, W, H), idx)
+            writer.add_image("score", iou_pred[0,:,:,:].sum(dim=1).view(1, W, H), idx)
+            # writer.add_image("score1", iou_pred[0, 1:2].view(1, W, H), idx)
+            # writer.add_image("score2", iou_pred[0, 2:3].view(1, W, H), idx)
+            # writer.add_image("score3", iou_pred[0, 3:4].view(1, W, H), idx)
+            # writer.add_image("score4", iou_pred[0, 4:5].view(1, W, H), idx)
+            writer.add_image("target_score", _ious[0,:,:,:].sum(dim=1).view(1, W, H), idx)
         if(idx%cfg.SAVE_PERIOD==0):
             torch.save(net, "weights/iter_%d.pth" % (idx))
 

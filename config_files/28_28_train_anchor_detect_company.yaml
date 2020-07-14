@@ -1,0 +1,15 @@
+OUT_SIZE: (28,28)
+STATE: "train"
+MODEL:
+    ARCH: "trcnet"
+LR: 0.001
+SAMPLE_IOU_THRESH: 0.6
+INPUT:
+    # Image ColorJitter
+    BRIGHTNESS: 0.0
+    CONTRAST: 0.0
+    SATURATION: 0.0
+    HUE: 0.0
+  # Flips
+    HORIZONTAL_FLIP_PROB_TRAIN: 0.0
+    VERTICAL_FLIP_PROB_TRAIN: 0.0
