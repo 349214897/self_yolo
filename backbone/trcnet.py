@@ -121,7 +121,7 @@ class ResNet(nn.Module):
         self.bn7 = nn.BatchNorm2d(256)
         self.relu7 = nn.ReLU(inplace=True)
 
-        self.conv8 = nn.Conv2d(256, 26, kernel_size=3, stride=1, padding=1,
+        self.conv8 = nn.Conv2d(256, 130, kernel_size=3, stride=1, padding=1,
                                bias=False)
 
         for m in self.modules():

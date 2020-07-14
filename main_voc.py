@@ -18,7 +18,7 @@ from config import cfg
 import argparse
 import os
 from load_model import load_model
-
+import torchvision
 
 def cal_iou(box1,box2):
     # box2 = box2.t()
@@ -107,31 +107,24 @@ def yolo_to_bbox(bbox_pred,H,W,anchors):
                     bbox_out[b, ind, a, 3] = cy + bh
     return bbox_out
 
-def no_anchor_to_bbox(bbox_pred,H,W):
+def no_anchor_to_bbox(bbox_pred,H,W,anchors):
+    num_anchors = anchors.shape[0]
     bsize=bbox_pred.shape[0]
-    num_anchors=1
     bbox_out = np.zeros((bsize,H*W,num_anchors,4),dtype=float)
     for b in range(bsize):
         for row in range(H):
             for col in range(W):
                 ind = row * W + col
                 for a in range(num_anchors):
-                    if(col+0.5-bbox_pred[b, ind, a, 0]*W>0):
-                        bbox_out[b, ind, a, 0] = (col+0.5)/W-bbox_pred[b, ind, a, 0]
-                    else:
-                        bbox_out[b, ind, a, 0] = 0
-                    if(row+0.5-bbox_pred[b, ind, a, 1]*H>0):
-                        bbox_out[b, ind, a, 1] = (row+0.5)/H-bbox_pred[b, ind, a, 1]
-                    else:
-                        bbox_out[b, ind, a, 1] = 0
-                    if(col+0.5+bbox_pred[b, ind, a, 2]*W<W):
-                        bbox_out[b, ind, a, 2] = (col+0.5)/W+bbox_pred[b, ind, a, 2]
-                    else:
-                        bbox_out[b, ind, a, 2] = 1
-                    if(row+0.5+bbox_pred[b, ind, a, 3]*H<H):
-                        bbox_out[b, ind, a, 3] = (row+0.5)/H+bbox_pred[b, ind, a, 3]
-                    else:
-                        bbox_out[b, ind, a, 3] = 1
+                    cx = (bbox_pred[b, ind, a, 0] + col) / W
+                    cy = (bbox_pred[b, ind, a, 1] + row) / H
+                    bw = bbox_pred[b, ind, a, 2] * anchors[a][0] / W * 0.5
+                    bh = bbox_pred[b, ind, a, 3] * anchors[a][1] / H * 0.5
+
+                    bbox_out[b, ind, a, 0] = cx - bw
+                    bbox_out[b, ind, a, 1] = cy - bh
+                    bbox_out[b, ind, a, 2] = cx + bw
+                    bbox_out[b, ind, a, 3] = cy + bh
     return bbox_out
 
 def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
@@ -166,9 +159,9 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
     # scale pred_bbox
 
     # bbox_pred_np = np.expand_dims(bbox_pred_np, 0)
-    bbox_np = no_anchor_to_bbox(
+    bbox_np = yolo_to_bbox(
         np.ascontiguousarray(bbox_pred_np, dtype=np.float),
-        H, W)
+        H, W,anchors)
     # bbox_np = (hw, num_anchors, (x1, y1, x2, y2))   range: 0 ~ 1
 
     bbox_np[:,:, :, 0::2] *= float(inp_size[0])  # rescale x
@@ -211,6 +204,17 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
         target_boxes[:, 3] = \
             (gt_boxes_b[:, 3] - gt_boxes_b[:, 1]) / inp_size[1] * out_size[1]  # th
 
+        # for each gt boxes, match the best anchor
+        gt_boxes_resize = np.copy(gt_boxes_b)
+        gt_boxes_resize[:, 0::2] *= (out_size[0] / float(inp_size[0]))
+        gt_boxes_resize[:, 1::2] *= (out_size[1] / float(inp_size[1]))
+        anchor_ious = anchor_intersection(
+            anchors,
+            np.ascontiguousarray(gt_boxes_resize, dtype=np.float)
+        )
+        anchor_inds = np.argmax(anchor_ious, axis=0)
+
+
         ious_reshaped = np.reshape(ious, [hw, num_anchors, len(cell_inds)])
         pos_pt_num=len(cell_inds)
         neg_pt_num=W*H-pos_pt_num
@@ -223,7 +227,7 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
                 print('cell over {} hw {}'.format(cell_ind, hw))
                 continue
             # a = anchor_inds[i]
-            a=0
+            a=anchor_inds[i]
             # 0 ~ 1, should be close to 1
             iou_pred_cell_anchor = iou_pred_np[b,cell_ind, a, :]
             # _iou_mask[b,cell_ind, a, :] = object_scale * (1 - iou_pred_cell_anchor)  # noqa
@@ -267,12 +271,8 @@ def build_target(cfg,bbox_pred_np,iou_pred_np,targets):
                     _ious[b, tmp_ind, a, :] = 1.0
                     _iou_mask[b, tmp_ind, a, :] = object_scale*probability
                     _box_mask[b, tmp_ind, a, :] = coord_scale
-                    temp_box = gt_boxes_b[i].numpy().copy()
-                    temp_box[0::2]=temp_box[0::2]/inp_size[0]*out_size[0]
-                    temp_box[1::2] = temp_box[1::2] / inp_size[1] * out_size[1]
-                    temp_box[0::2]=np.abs(temp_box[0::2]-w_ind.numpy()-n-0.5)/W
-                    temp_box[1::2] = np.abs(temp_box[1::2] -h_ind.numpy()-m-0.5)/H
-                    _boxes[b, tmp_ind, a, :] = temp_box
+                    target_boxes[i,2:4]/=anchors[a]
+                    _boxes[b, tmp_ind, a, :] = target_boxes[i]
                     _class_mask[b, tmp_ind, a, :] = class_scale
                     _classes[b, tmp_ind, a, gt_classes_b[i]] = 1.0
 
@@ -316,6 +316,22 @@ def bbox_ious(boxes,query_boxes):
                     )
                     inter_area = iw * ih
                     intersec[n, k] = inter_area / (qbox_area + box_area - inter_area)
+    return intersec
+
+def anchor_intersection(anchors,query_boxes):
+    N = anchors.shape[0]
+    K = query_boxes.shape[0]
+    intersec = np.zeros((N, K), dtype=float)
+    for n in range(N):
+        anchor_area = anchors[n, 0] * anchors[n, 1]
+        for k in range(K):
+            boxw = (query_boxes[k, 2] - query_boxes[k, 0] + 1)
+            boxh = (query_boxes[k, 3] - query_boxes[k, 1] + 1)
+            iw = min(anchors[n, 0], boxw)
+            ih = min(anchors[n, 1], boxh)
+            inter_area = iw * ih
+            intersec[n, k] = inter_area / (anchor_area + boxw * boxh - inter_area)
+
     return intersec
 
 def np_to_variable(x, is_cuda=True, dtype=torch.FloatTensor, volatile=False):
@@ -364,7 +380,84 @@ def nms(dets, scores, thresh):
 
     return keep
 
-def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_class,show_gt=False):
+def clip_boxes(boxes, im_shape):
+    """
+    Clip boxes to image boundaries.
+    """
+    if boxes.shape[0] == 0:
+        return boxes
+
+    # x1 >= 0
+    boxes[:, 0::4] = np.maximum(np.minimum(boxes[:, 0::4], im_shape[1] - 1), 0)
+    # y1 >= 0
+    boxes[:, 1::4] = np.maximum(np.minimum(boxes[:, 1::4], im_shape[0] - 1), 0)
+    # x2 < im_shape[1]
+    boxes[:, 2::4] = np.maximum(np.minimum(boxes[:, 2::4], im_shape[1] - 1), 0)
+    # y2 < im_shape[0]
+    boxes[:, 3::4] = np.maximum(np.minimum(boxes[:, 3::4], im_shape[0] - 1), 0)
+    return boxes
+
+def postprocess(bbox_pred, iou_pred, prob_pred, im_shape, cfg, thresh=0.05,
+                size_index=0):
+    """
+    bbox_pred: (bsize, HxW, num_anchors, 4)
+               ndarray of float (sig(tx), sig(ty), exp(tw), exp(th))
+    iou_pred: (bsize, HxW, num_anchors, 1)
+    prob_pred: (bsize, HxW, num_anchors, num_classes)
+    """
+
+    # num_classes, num_anchors = cfg.num_classes, cfg.num_anchors
+    num_classes = cfg.CLASS_NUM
+    anchors = cfg.ANCHORS
+    # W, H = cfg.multi_scale_out_size[size_index]
+    W,H=cfg.OUT_SIZE
+    assert bbox_pred.shape[0] == 1, 'postprocess only support one image per batch'  # noqa
+
+    bbox_pred = yolo_to_bbox(
+        np.ascontiguousarray(bbox_pred, dtype=np.float),
+        H, W, np.ascontiguousarray(anchors, dtype=np.float))
+    bbox_pred = np.reshape(bbox_pred, [-1, 4])
+    bbox_pred[:, 0::2] *= float(im_shape[1])
+    bbox_pred[:, 1::2] *= float(im_shape[0])
+    bbox_pred = bbox_pred.astype(np.int)
+
+    iou_pred = np.reshape(iou_pred, [-1])
+    prob_pred = np.reshape(prob_pred, [-1, num_classes])
+
+    cls_inds = np.argmax(prob_pred, axis=1)
+    prob_pred = prob_pred[(np.arange(prob_pred.shape[0]), cls_inds)]
+    scores = iou_pred * prob_pred
+    # scores = iou_pred
+    assert len(scores) == len(bbox_pred), '{}, {}'.format(scores.shape, bbox_pred.shape)
+    # threshold
+    keep = np.where(scores >= thresh)
+    bbox_pred = bbox_pred[keep]
+    scores = scores[keep]
+    cls_inds = cls_inds[keep]
+
+    # NMS
+    keep = np.zeros(len(bbox_pred), dtype=np.int)
+    for i in range(num_classes):
+        inds = np.where(cls_inds == i)[0]
+        if len(inds) == 0:
+            continue
+        c_bboxes = bbox_pred[inds]
+        c_scores = scores[inds]
+        c_keep = nms(c_bboxes, c_scores, 0.3)
+        keep[inds[c_keep]] = 1
+
+    keep = np.where(keep > 0)
+    # keep = nms_detections(bbox_pred, scores, 0.3)
+    bbox_pred = bbox_pred[keep]
+    scores = scores[keep]
+    cls_inds = cls_inds[keep]
+
+    # clip
+    bbox_pred = clip_boxes(bbox_pred, im_shape)
+
+    return bbox_pred, scores, cls_inds
+
+def show_result(cfg,image,bbox,score,cls):
     CLASSES = (
         "__background__ ",
         "aeroplane",
@@ -388,62 +481,21 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
         "train",
         "tvmonitor",
     )
+
     colors=[(25,25,125),(50,25,125),(25,25,150),(25,50,125),(50,50,150),(50,75,150)
         ,(75,50,150),(50,50,175),(75,75,175),(100,75,175),(75,100,175),(75,175,100),
         (125,100,200),(125,100,200),(200,25,200),(200,100,125),(125,125,225),(150,125,225),
          (225,150,225),(125,125,150),(150,150,250)]
-
-    #PILImage ->to_tensor->torch->ToPilImage->cvimage
-    import torchvision
-    transforms=torchvision.transforms
-    imageshow = transforms.ToPILImage()(image).convert('RGB')
-    imageshow=np.transpose(imageshow,(0,1,2))
-
-    pred_bbox_np=bbox.cpu().detach().numpy()
-    pred_score_np=score.cpu().detach().numpy()
-    pred_class_np = pred_class.cpu().detach().numpy()
-    target_bbox_np=target_box.cpu().numpy()
-    target_score_np=target_score.cpu().numpy()
-    if(cfg.STATE=="test"):
-        target_class_np=target_class
-    if(cfg.STATE=="train"):
-        target_class_np = target_class.cpu().detach().numpy()
-
-
-    H,W=cfg.OUT_SIZE
-    O_H,O_W =cfg.IN_SIZE
-
-    pred_bbox_np = np.expand_dims(pred_bbox_np, 0)
-    target_bbox_np = np.expand_dims(target_bbox_np,0)
-
-    pred_score_mask=pred_score_np[:,0,0]>cfg.POSTPROCESS.THRESH
-    pred_bbox=no_anchor_to_bbox(pred_bbox_np,H,W)
-    pred_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
-    pred_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
-    pred_bbox=pred_bbox[0]
-
-    target_score_mask=target_score_np[:,0,0]>cfg.POSTPROCESS.THRESH
-    target_bbox=no_anchor_to_bbox(target_bbox_np,H,W)
-    target_bbox[:,:, :, 0::2] *= float(O_W)  # rescale x
-    target_bbox[:,:, :, 1::2] *= float(O_H)  # rescale y
-    target_bbox=target_bbox[0]
-
-    pred_bbox=pred_bbox[pred_score_mask,0,:]
-    pred_class_np=pred_class_np[pred_score_mask,0,:]
-    if(pred_class_np.shape[0]==0):
-        print("!!!!!!!!!!!!!!!!!!!!no predict!!!!")
-        return imageshow
-    class_id=pred_class_np.argmax(axis=1)
-    keep=nms(pred_bbox,pred_score_np[pred_score_mask,0,0],cfg.POSTPROCESS.NMS_THRESH)
     devide=[1.0]*21
-    for idx in keep:
-        pt1=(int(pred_bbox[idx,0]),int(pred_bbox[idx,1]))
-        pt2=(int(pred_bbox[idx,2]),int(pred_bbox[idx,3]))
-        color=colors[int(class_id[idx])]
-        color=(color[0]/devide[int(class_id[idx])],color[1] / devide[int(class_id[idx])],color[2] / devide[int(class_id[idx])])
-        cv2.rectangle(imageshow,pt1,pt2,color,2)
-        cv2.putText(imageshow,str(CLASSES[int(class_id[idx])])+" "+"%.2f"%(float(pred_score_np[pred_score_mask,0,0][idx])),pt1,2,1,(0,255,0))
-        devide[int(class_id[idx])]=devide[int(class_id[idx])]+1
+
+    for idx in range(bbox.shape[0]):
+        pt1=(int(bbox[idx,0]),int(bbox[idx,1]))
+        pt2=(int(bbox[idx,2]),int(bbox[idx,3]))
+        color=colors[int(cls[idx])]
+        color=(color[0]/devide[int(cls[idx])],color[1] / devide[int(cls[idx])],color[2] / devide[int(cls[idx])])
+        cv2.rectangle(image,pt1,pt2,color,2)
+        cv2.putText(image,str(CLASSES[int(cls[idx])])+" "+"%.2f"%(float(score[idx])),pt1,2,1,(0,255,0))
+        devide[int(cls[idx])]=devide[int(cls[idx])]+1
 
         # center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
         # # cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
@@ -452,26 +504,10 @@ def show_image(cfg,image,bbox,score,target_box,target_score,pred_class,target_cl
         # rb = lt[0] + 32, lt[1] + 32
         # cv2.rectangle(imageshow, lt, rb, (0, 255, 0), 1)
 
-    if(show_gt):
-        target_bbox=target_bbox[target_score_mask,0,:]
-        target_class_np=target_class_np[target_score_mask,0,:]
-        target_class_id=target_class_np.argmax(axis=1)
-        keep=nms(target_bbox,target_score_np[target_score_mask,0,0],0.7)
-        for idx in keep:
-            pt1=(int(target_bbox[idx,0]),int(target_bbox[idx,1]))
-            pt2=(int(target_bbox[idx,2]),int(target_bbox[idx,3]))
-            cv2.rectangle(imageshow,pt1,pt2,(255,0,0),2)
-            cv2.putText(imageshow, str(CLASSES[int(target_class_id[idx])])+" "+"%.2f"%(float(target_score_np[target_score_mask,0,0][idx])), pt1, 2, 1, (255, 0, 0))
-            # center = int((pt1[0] + pt2[0]) / 2), int((pt1[1] + pt2[1]) / 2)
-            # cv2.circle(imageshow, center, 32, (255, 0, 0), 3)
-            # cv2.circle(imageshow, center, 1, (255, 0, 0), 3)
-            # lt = int(center[0] / 32) * 32, int(center[1] / 32) * 32
-            # rb = lt[0] + 32, lt[1] + 32
-            # cv2.rectangle(imageshow, lt, rb, (0, 255, 255), 3)
-
     # for e in target.bbox:
     #     cv2.rectangle(imageshow,(e[0],e[1]),(e[2],e[3]),(255,0,0))
-    return imageshow
+    return image
+
 
 def iou_loss(pred_boxs,target_boxs,iou_mask):
 
@@ -496,9 +532,9 @@ def iou_loss(pred_boxs,target_boxs,iou_mask):
     )
     inter_area = iw * ih
     intersec = torch.zeros(box_area.shape).cuda()
-    wh_mask = (ih > 0) & (iw > 0) & (iou_mask[:, :, 0, :] > 0)
+    wh_mask = (ih > 0) & (iw > 0) & (iou_mask > 0)
     intersec[wh_mask] = inter_area[wh_mask] / (qbox_area[wh_mask] + box_area[wh_mask] - inter_area[wh_mask])
-    box_loss= -1 * torch.log(intersec[wh_mask]*iou_mask[:,:,0,:][wh_mask])
+    box_loss= -1 * torch.log(intersec[wh_mask]*iou_mask[wh_mask])
     box_loss=box_loss.sum()
     return box_loss
 
@@ -512,31 +548,14 @@ def focal_loss(pred_score,target_score,mask):
     loss_negtive = -1.0*(1.0-alpha)*(target_score-eps<0.0).float()*mask*lognpt*pred_score**gamma
     return (loss_negtive+loss_positive).sum()
 
+def get_cv_image(image_tensor):
+    transforms = torchvision.transforms
+    image = transforms.ToPILImage()(image_tensor).convert('RGB')
+    image = np.transpose(image, (0, 1, 2))
+    return image
+
 def train(cfg):
-    # parser = argparse.ArgumentParser(description="PyTorch Object Detection Training")
-    # parser.add_argument(
-    #     "--",
-    #     default="",
-    #     metavar="FILE",
-    #     help="path to config file",
-    #     type=str,
-    # )
 
-
-    # net=Yolo(cfg=None)
-    # net=SfsVps(cfg=None)
-    # net =trcnet.trcnet50()
-    # # load pretrain resnet50
-    # model_dict=net.state_dict()
-    # res_net=models.resnet50(pretrained=True)
-    # pretrained_dict=res_net.state_dict()
-    # pretrained_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict}
-    # model_dict.update(pretrained_dict)
-    # net.load_state_dict(model_dict)
-    #
-    # # net=torch.load("/home/tan/e_work/project/self_yolo_anchorfree_iou/weights/iter_200.pth")
-    # device = torch.device("cuda")
-    # net.to(device)
     net=load_model(cfg)
 
     # create your optimizer
@@ -571,14 +590,11 @@ def train(cfg):
         output=net(torch.stack(images).cuda())
 
         bsize, _, h, w = output.size()
-        output=output.permute(0,2,3,1).contiguous().view(bsize,-1,1,26)
+        output=output.permute(0,2,3,1).contiguous().view(bsize,-1,len(cfg.ANCHORS),26)
 
-        # tx, ty, tw, th, to -> sig(tx), sig(ty), exp(tw), exp(th), sig(to)
-        # xy_pred = 2*torch.tanh(output[:, :, :, 0:2])
-        # # wh_pred = torch.exp(output[:, :, :, 2:4])
-        # wh_pred = torch.sigmoid(output[:, :, :, 2:4])
-        # bbox_pred = torch.cat([xy_pred, wh_pred], 3)
-        bbox_pred = torch.sigmoid(output[:, :, :, 0:4])
+        xy_pred = F.sigmoid(output[:, :, :, 0:2])
+        wh_pred = torch.exp(output[:, :, :, 2:4])
+        bbox_pred = torch.cat([xy_pred, wh_pred], 3)
         iou_pred = F.sigmoid(output[:, :, :, 4:5])
 
         score_pred = output[:, :, :, 5:].contiguous()
@@ -586,6 +602,7 @@ def train(cfg):
 
         bbox_pred_np = bbox_pred.data.cpu().numpy()
         iou_pred_np = iou_pred.data.cpu().numpy()
+        prob_pred_np =prob_pred.data.cpu().numpy()
         _boxes, _ious, _classes, _box_mask, _iou_mask, _class_mask=build_target(cfg,bbox_pred_np,iou_pred_np,targets)
         _boxes = np_to_variable(_boxes)
         _ious = np_to_variable(_ious)
@@ -602,8 +619,8 @@ def train(cfg):
         # _boxes[:, :, :, 2:4] = torch.log(_boxes[:, :, :, 2:4])
         # box_mask = box_mask.expand_as(_boxes)
 
-        # bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
-        bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)/num_boxes
+        bbox_loss = nn.MSELoss(size_average=False)(bbox_pred * box_mask, _boxes * box_mask) / num_boxes  # noqa
+        # bbox_loss = iou_loss(bbox_pred,_boxes,box_mask)/num_boxes
         # pt_loss = nn.MSELoss(size_average=False)(iou_pred * iou_mask, _ious * iou_mask) / num_boxes  # noqa
         #focalloss
         pt_loss = focal_loss(iou_pred,_ious,iou_mask)/num_boxes
@@ -620,8 +637,13 @@ def train(cfg):
         writer.add_scalar("lobj", pt_loss * 5, idx)
         writer.add_scalar("lbox", bbox_loss, idx)
         if(idx%cfg.SHOW_PERIOD==0):
-            imageshow=show_image(cfg,images[0],bbox_pred[0],iou_pred[0],_boxes[0],_ious[0],prob_pred[0],_classes[0])
-            writer.add_image("image", torch.from_numpy(imageshow).permute(2, 0, 1), idx)
+            image=get_cv_image(images[0])
+            # bbox_pred_s= np.expand_dims(bbox_pred[0], 0)
+            bbox,score,cls=postprocess(bbox_pred_np[:1],iou_pred_np[:1],prob_pred_np[:1],cfg.IN_SIZE,cfg,cfg.POSTPROCESS.THRESH)
+            target_bbox,target_score,target_cls=postprocess(_box_mask[:1], _iou_mask[:1], _class_mask[:1],cfg.IN_SIZE,cfg,cfg.POSTPROCESS.THRESH)
+            image=show_result(cfg,image,bbox,score,cls)
+            image=show_result(cfg,image,target_bbox,target_score,target_cls)
+            writer.add_image("image", torch.from_numpy(image).permute(2, 0, 1), idx)
             writer.add_image("score", iou_pred[0].view(1, W, H), idx)
             writer.add_image("target_score", _ious[0].view(1, W, H), idx)
         if(idx%cfg.SAVE_PERIOD==0):
